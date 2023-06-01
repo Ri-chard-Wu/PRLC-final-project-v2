@@ -999,7 +999,7 @@ protected:
     }
 
 
-    // If we didn't find a hyperplane, just randomize sides as a last option
+    // If we didn not find a hyperplane, just randomize sides as a last option
     while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
       
       // if (_verbose)

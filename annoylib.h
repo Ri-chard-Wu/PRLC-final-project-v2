@@ -922,21 +922,28 @@ protected:
 
   S _make_tree(const vector<S>& indices, bool is_root, Random& _random, 
                               ThreadedBuildPolicy& threaded_build_policy) {
+    
+    // static int random_side_count;                                
+    // static int attempt_hist[4];
+    // static int level = 0;
+    // const int n_level = 25;
+    // static int level_hist[n_level] = { 0 };
 
-    static int level = 0;
-    const int n_level = 20;
-    static int level_hist[n_level] = { 0 };
+    // if(is_root){
+    //   // for(int i = 0; i < n_level; i++){
+    //   //   level_hist[i] = 0;
+    //   // }
 
-    if(is_root){
-      for(int i = 0; i < n_level; i++){
-        level_hist[i] = 0;
-      }
-    }
+    //   for(int i = 0; i < 4; i++){
+    //     attempt_hist[i] = 0;
+    //   }
 
+    //   random_side_count = 0;
+    // }
 
-    if(level < n_level){
-      level_hist[level]++;
-    }
+    // if(level < n_level){
+    //   level_hist[level]++;
+    // }
 
 
 
@@ -964,8 +971,9 @@ protected:
       return item;
     }
 
-    vector<Node*> children;
 
+
+    vector<Node*> children;
     for (size_t i = 0; i < indices.size(); i++) {
       S j = indices[i];
       Node* n = _get(j);
@@ -973,10 +981,16 @@ protected:
         children.push_back(n);
     }
 
+
+
+
     vector<S> children_indices[2];
     Node* m = (Node*)alloca(_s);
 
-    for (int attempt = 0; attempt < 3; attempt++) {
+    int attempt;
+    for (attempt = 0; attempt < 3; attempt++) {
+
+      
 
       children_indices[0].clear();
       children_indices[1].clear();
@@ -998,13 +1012,15 @@ protected:
         break;
     }
 
+    // attempt_hist[attempt]++;
+
+
+
 
     // If we didn not find a hyperplane, just randomize sides as a last option
     while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
-      
-      // if (_verbose)
-      //   annoylib_showUpdate("\tNo hyperplane found (left has %ld children, right has %ld children)\n",
-      //     children_indices[0].size(), children_indices[1].size());
+
+      // random_side_count++;
 
       children_indices[0].clear();
       children_indices[1].clear();
@@ -1021,23 +1037,33 @@ protected:
     }
 
 
+
+
     int flip = (children_indices[0].size() > children_indices[1].size());
 
     m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
-      level++;
-      m->children[side^flip] = _make_tree(children_indices[side^flip], false,
+      // level++;
+      m->children[side] = _make_tree(children_indices[side], false,
                                        _random, threaded_build_policy);
-      level--;                                
+      // level--;                                
     }
 
 
-    if(is_root){
-      for(int i = 0; i < n_level; i++){
-        printf("%d, ", level_hist[i]);
-      }
-      printf("\n");
-    }
+    // if(is_root){
+    //   // for(int i = 0; i < n_level; i++){
+    //   //   printf("%d, ", level_hist[i]);
+    //   // }
+    //   // printf("\n");
+
+    //   for(int i = 0; i < 4; i++){
+    //     printf("%d, ", attempt_hist[i]);
+    //   }
+    //   printf("\n");
+
+    //   printf("random_side_count: %d\n", random_side_count);
+
+    // }
 
 
 
@@ -1113,6 +1139,9 @@ protected:
       result->push_back(nns_dist[i].second);
     }
   }
+
+
+  
 };
 
 

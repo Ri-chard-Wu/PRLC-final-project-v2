@@ -1,5 +1,5 @@
 
-
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include "kissrandom.h"
@@ -21,7 +21,7 @@ int precision(int f=40, int n=1000000){
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
 
 	std::default_random_engine generator;
-	std::normal_distribution<double> distribution(0.0, 1.0);
+	// std::normal_distribution<double> distribution(0.0, 1.0);
 
 	//******************************************************
 	//Building the tree
@@ -36,11 +36,17 @@ int precision(int f=40, int n=1000000){
 	std::cout << "Building index ..." << std::endl;
 
 
-
+	
 	for(int i = 0; i < n; ++i){ // n: number of vectors
 
 		double *vec = (double *) malloc( f * sizeof(double) );
 
+		// double mean = (double)(rand() % 10);
+		// double std = (double)(rand() % 5);
+		double mean = 0.0;
+		double std = 1.0;		
+		std::normal_distribution<double> distribution(mean, std);
+		
 		for(int z = 0; z < f; ++z){ // f: vector dim.
 
 			vec[z] = (distribution(generator));
@@ -62,7 +68,7 @@ int precision(int f=40, int n=1000000){
 	std::cout << "Building index num_trees = 2 * num_features ...";
 
 	t_start = std::chrono::high_resolution_clock::now();
-	t.build(100);
+	t.build(80);
 	t_end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::seconds>( t_end - t_start ).count();
 	std::cout << " Done in "<< duration << " secs." << std::endl;
@@ -164,14 +170,14 @@ int main(int argc, char **argv) {
 
 	int f, n;
 
-	// f = 40;
-	// n = 100000;
+	f = 40;
+	n = 100000;
 
 	// f = 756;
 	// n = 20000;
 
-	f = 32;
-	n = 1000000;
+	// f = 128;
+	// n = 10000;
 
 	precision(f, n);
 

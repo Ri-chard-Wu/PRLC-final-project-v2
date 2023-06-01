@@ -920,44 +920,161 @@ protected:
 
 
 
-  S _make_tree(const vector<S>& indices, bool is_root, Random& _random, 
-                              ThreadedBuildPolicy& threaded_build_policy) {
-    
-    // static int random_side_count;                                
-    // static int attempt_hist[4];
-    // static int level = 0;
-    // const int n_level = 25;
-    // static int level_hist[n_level] = { 0 };
-
-    // if(is_root){
-    //   // for(int i = 0; i < n_level; i++){
-    //   //   level_hist[i] = 0;
-    //   // }
-
-    //   for(int i = 0; i < 4; i++){
-    //     attempt_hist[i] = 0;
-    //   }
-
-    //   random_side_count = 0;
-    // }
-
-    // if(level < n_level){
-    //   level_hist[level]++;
-    // }
+  // S _make_tree(const vector<S>& indices, bool is_root, Random& _random, 
+  //                             ThreadedBuildPolicy& threaded_build_policy) {
 
 
 
+
+  //   if (indices.size() == 1 && !is_root)
+  //     return indices[0];
+
+
+  //   // a leaf node.
+  //   if (indices.size() <= (size_t)_K && \
+  //           (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
+   
+
+  //     _allocate_size(_n_nodes + 1, threaded_build_policy);
+  //     S item = _n_nodes++;
+  //     Node* m = _get(item);
+
+
+  //     m->n_descendants = is_root ? _n_items : (S)indices.size();
+
+  //     // use all spaces for vector to store > 2 child indices.
+  //     if (!indices.empty())
+  //       memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+
+  //     return item;
+  //   }
+
+
+
+  //   vector<Node*> children;
+  //   for (size_t i = 0; i < indices.size(); i++) {
+  //     S j = indices[i];
+  //     Node* n = _get(j);
+  //     if (n)
+  //       children.push_back(n);
+  //   }
+
+
+
+
+  //   vector<S> children_indices[2];
+  //   Node* m = (Node*)alloca(_s);
+
+  //   int attempt;
+  //   for (attempt = 0; attempt < 3; attempt++) {
+
+      
+
+  //     children_indices[0].clear();
+  //     children_indices[1].clear();
+
+  //     D::create_split(children, _f, _s, _random, m); 
+      
+  //     for (size_t i = 0; i < indices.size(); i++) { 
+        
+  //       S j = indices[i];
+  //       Node* n = _get(j);
+        
+  //       if (n) {
+  //         bool side = D::side(m, n->v, _f, _random);
+  //         children_indices[side].push_back(j);
+  //       } 
+  //     }
+
+  //     if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
+  //       break;
+  //   }
+
+
+
+
+
+  //   // If we didn not find a hyperplane, just randomize sides as a last option
+  //   while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
+
+
+  //     children_indices[0].clear();
+  //     children_indices[1].clear();
+
+  //     // Set the vector to 0.0
+  //     for (int z = 0; z < _f; z++)
+  //       m->v[z] = 0;
+
+  //     for (size_t i = 0; i < indices.size(); i++) {
+  //       S j = indices[i];
+  //       children_indices[_random.flip()].push_back(j);
+  //     }
+  //   }
+
+
+
+
+  //   int flip = (children_indices[0].size() > children_indices[1].size());
+
+  //   m->n_descendants = is_root ? _n_items : (S)indices.size();
+  //   for (int side = 0; side < 2; side++) {
+  //     m->children[side] = _make_tree(children_indices[side], false,
+  //                                      _random, threaded_build_policy);
+  //   }
+
+
+
+  //   _allocate_size(_n_nodes + 1, threaded_build_policy);
+  //   S item = _n_nodes++;
+
+  //   memcpy(_get(item), m, _s);
+
+  //   return item;
+  // }
+
+
+
+
+
+
+
+  
+
+
+  S _make_tree(const vector<S>& indices, Random& _random) {
+
+    struct PosSz{
+      PosSz(S pos, S sz): pos(pos), sz(sz){}
+      S pos;
+      S sz;
+    };
+
+    vector<PosSz> posSz_vec; 
+    posSz_vec.push_back(PosSz(0, indices.size()));
+
+    bool done = false;
+
+    while(!done){
+
+      for(int i = 0; i < posSz_vec.size(); i++){
+        
+        posSz_vec[i]
+
+
+      }
+    }
 
 
     if (indices.size() == 1 && !is_root)
       return indices[0];
+
 
     // a leaf node.
     if (indices.size() <= (size_t)_K && \
             (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
    
 
-      _allocate_size(_n_nodes + 1, threaded_build_policy);
+      _allocate_size(_n_nodes + 1);
       S item = _n_nodes++;
       Node* m = _get(item);
 
@@ -1012,7 +1129,6 @@ protected:
         break;
     }
 
-    // attempt_hist[attempt]++;
 
 
 
@@ -1020,7 +1136,6 @@ protected:
     // If we didn not find a hyperplane, just randomize sides as a last option
     while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
 
-      // random_side_count++;
 
       children_indices[0].clear();
       children_indices[1].clear();
@@ -1031,7 +1146,6 @@ protected:
 
       for (size_t i = 0; i < indices.size(); i++) {
         S j = indices[i];
-        // Just randomize...
         children_indices[_random.flip()].push_back(j);
       }
     }
@@ -1043,37 +1157,23 @@ protected:
 
     m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
-      // level++;
       m->children[side] = _make_tree(children_indices[side], false,
                                        _random, threaded_build_policy);
-      // level--;                                
     }
 
 
-    // if(is_root){
-    //   // for(int i = 0; i < n_level; i++){
-    //   //   printf("%d, ", level_hist[i]);
-    //   // }
-    //   // printf("\n");
 
-    //   for(int i = 0; i < 4; i++){
-    //     printf("%d, ", attempt_hist[i]);
-    //   }
-    //   printf("\n");
-
-    //   printf("random_side_count: %d\n", random_side_count);
-
-    // }
-
-
-
-    _allocate_size(_n_nodes + 1, threaded_build_policy);
+    _allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
 
     memcpy(_get(item), m, _s);
 
     return item;
   }
+
+
+
+
 
 
 

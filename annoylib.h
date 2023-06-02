@@ -253,13 +253,19 @@ inline void two_means(const vector<Node*>& nodes, int f,
 }
 
 
-template<typename S>
-void swap(vector<S>& indices, int id1, int id2){
-  S tmp = indices[id1];
-  indices[id1] = indices[id2];
-  indices[id2] = tmp;
-}
+// template<typename S>
+// void swap(vector<S>& arr, int id1, int id2){
+//   S tmp = arr[id1];
+//   arr[id1] = arr[id2];
+//   arr[id2] = tmp;
+// }
 
+template<typename T>
+void swap(T& arr, int id1, int id2){
+  S tmp = arr[id1];
+  arr[id1] = arr[id2];
+  arr[id2] = tmp;
+}
 
 } // namespace
 
@@ -618,6 +624,30 @@ public:
 
 
 
+
+  void group_moveSide(vector<S>& indices, int *sides, int offset, int sz_group,
+                                         int& n_left, int& n_right){
+
+    // int offset = groupArray[group_i].pos;
+    // int sz_group = groupArray[group_i].sz;
+
+    n_right = 0 ,n_left = 0;
+    while(n_left + n_right < sz_group){
+      
+      if(sides[n_left] == 1){ // right
+        swap<int>(sides, n_left, sz_group - n_right);
+        swap<vector<S> >(indices, offset + n_left, (offset + sz_group - 1) - n_right);
+        n_right++;
+      }
+      else{
+        n_left++;
+      }
+    }
+  }
+
+
+
+
   // kernel_clasify_side_large
   void launchKernel_clasifySideLarge(vector<S>& indices, 
                           vector<Group>& groupArray, int group_i){
@@ -626,6 +656,7 @@ public:
     int sz_group = groupArray[group_i].sz;
     
     int *sides = new int[sz_group];
+    int n_right, n_left;
 
 
     for (int attempt = 0; attempt < 3; attempt++){
@@ -695,21 +726,26 @@ public:
       }
 
 
-      int n_right = 0;
-      for(int i = 0 ; i < sz_group; i++){
-        
-        if(sides[i] == 1){
-          swap(indices, offset + n_right, offset + i);
-          n_right++;
-        }
-      }
-      
+      group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
 
       if (_split_imbalance(sz_group - n_right, n_right) < 0.95) break;
     }
 
+
+
+    // If we didn't find a hyperplane, just randomize sides as a last option
+    while (_split_imbalance(sz_group - n_right, n_right) > 0.99) {
+
+      for(int i = 0; i < sz_group; i++){
+        sides[i] = _random.flip();
+      }
+
+      group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
+    }
+
   }
 
+  
 
 
   S _make_tree(vector<S>& indices, Random& _random) {

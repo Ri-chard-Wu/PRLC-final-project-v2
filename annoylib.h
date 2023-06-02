@@ -825,8 +825,11 @@ public:
 
 
     _allocate_size(_n_nodes + 1);
-    vector<Group> groupArray; 
-    groupArray.push_back(Group(0, indices.size(), -1, -1, _n_nodes++));
+    vector<Group> groupArray;
+    S item = _n_nodes++;
+    Node* m = _get(item); 
+    m->n_descendants = _n_items; 
+    groupArray.push_back(Group(0, indices.size(), -1, -1, item));
 
 
     bool done = false;
@@ -921,17 +924,32 @@ public:
           launchKernel_classifySideSmall(batch, groupArray, indices);
 
           for(int i = 0; i < batch.size(); i++){
+            
+            // for each internal node, the attributes need to be set:
+            // - v: get from D::create_split().
+            // - n_descendants
+            // - children
+
+            int pos[2], idx[2], n[2];
+
+            pos[0] = groupArray[batch[i].group].pos;
+            pos[1] = pos_left + batch[i].n_left;
           
-            int pos_left = groupArray[batch[i].group].pos;
-            int pos_right = pos_left + batch[i].n_left;
-            int parent_idx = groupArray[batch[i].group].idx;
             _allocate_size(_n_nodes + 2);
+            idx[0] = _n_nodes++;
+            idx[1] = _n_nodes++;
 
-            groupArray.push_back(
-                Group(pos_left, batch[i].n_left,  parent_idx, 0, _n_nodes++));
-            groupArray.push_back(
-                Group(pos_right, batch[i].n_right, parent_idx, 1, _n_nodes++));
+            n[0] = batch[i].n_left;
+            n[1] = batch[i].n_right;
 
+            int parent_idx = groupArray[batch[i].group].idx;
+            Node* p = _get(parent_idx);
+           
+            for(int i = 0; i < 2; i++){
+              _get(idx[i])->n_descendants = n[i];
+              groupArray.push_back(Group(pos[i], n[i],  parent_idx, i, idx[i]));
+              p->children[i] = idx[i];
+            }
           }
 
 

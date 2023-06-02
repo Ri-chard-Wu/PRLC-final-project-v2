@@ -424,12 +424,24 @@ class AnnoyIndexInterface {
 
 
 
-__global__ void kernel_classify_side(){
+__global__ void kernel_classifySideSmall(){
 
     int gid = blockIdx.x * blockDim.x + threadIdx.x;
     
     
 }
+
+
+
+
+__global__ void kernel_classifySideLarge(){
+
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    
+}
+
+
 
 
 template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
@@ -477,8 +489,8 @@ public:
 
 
 
-  // _make_tree_launch_kernel
-  S kernel_clasify_side_small(vector<BatchItem> &batch, vector<Group> &groupArray, vector<S>& indices){
+  // kernel_clasify_side_small
+  S launchKernel_clasifySideSmall(vector<BatchItem> &batch, vector<Group> &groupArray, vector<S>& indices){
 
 
     int total_node_num = 0;
@@ -551,7 +563,7 @@ public:
 
     int n_blocks = 32, n_threads_per_block = 128;
     
-    kernel_classify_side<n_blocks, n_threads_per_block>(nodeArray_dev,
+    kernel_classifySideSmall<n_blocks, n_threads_per_block>(nodeArray_dev,
                   total_node_num, szArray_dev, splitArray_dev, sides_dev); 
 
     cudaDeviceSynchronize();
@@ -597,15 +609,15 @@ public:
 
 
 
-  // handle_too_large_group
-  void kernel_clasify_side_large(vector<S>& indices, vector<Group>& groupArray, int group_i){
+
+  // kernel_clasify_side_large
+  void launchKernel_clasifySideLarge(vector<S>& indices, vector<Group>& groupArray, int group_i){
 
     int offset = groupArray[group_i].pos;
     int sz_group = groupArray[group_i].sz;
     
 
-    Node* splitNode = (Node*)alloca(_s); 
-    find_split(indices, offset, sz_group, splitNode);
+
 
 
     int batch_start = 0, batch_sz;
@@ -617,8 +629,6 @@ public:
       else{
         batch_sz = sz_group - batch_start;
       }
-
-
 
 
       // -------------------------------------
@@ -635,9 +645,52 @@ public:
       }
 
       cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
-                      _s * total_node_num, cudaMemcpyHostToDevice);
+                      _s * batch_sz, cudaMemcpyHostToDevice);
+
 
       // -------------------------------------
+
+      int *sides_dev, sides_host;
+      cudaMalloc(&sides_dev, batch_sz * sizeof(int));
+      sides_host = new int[batch_sz];
+
+      // -------------------------------------
+
+      Node *splitNode_dev, *splitNode_host;
+      cudaMalloc(&splitNode_dev, _s);
+      Node* splitNode_host = (Node*)alloca(_s); 
+      find_split(indices, offset, sz_group, splitNode_host);
+
+      cudaMemcpy((BYTE *)splitNode_dev, (BYTE *)splitNode_host, 
+                                        _s, cudaMemcpyHostToDevice);
+
+      // -------------------------------------
+      
+
+
+      int n_blocks = 32, n_threads_per_block = 128;
+      
+      kernel_classifySideLarge<n_blocks, n_threads_per_block>(nodeArray_dev,
+                    batch_sz, splitNode_dev, sides_dev); 
+
+      cudaDeviceSynchronize();
+
+      // -------------------------------------
+
+      cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
+                total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -737,7 +790,7 @@ public:
         if(!groupArray[group_i].can_split) continue;
         
         if(groupArray[group_i].sz > batch_max_node){
-          handle_too_large_group(indices, groupArray, group_i);
+          launchKernel_clasifySideLarge(indices, groupArray, group_i);
           group_i++;
           continue;
         }
@@ -751,7 +804,7 @@ public:
         }
         else{
             
-          _make_tree_launch_kernel(batch, groupArray, indices);
+          launchKernel_clasifySideSmall(batch, groupArray, indices);
 
           batch.clear();
           n_node = 0;

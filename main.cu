@@ -13,35 +13,7 @@
 #include <stdexcept>           
 #include <string>           
 
-typedef unsigned char BYTE;
-
-__global__ void kernel1(float *arr, long long N, int n_total_threads){
-
-    int gid = blockIdx.x * blockDim.x + threadIdx.x;
-
-
-    // if(threadIdx.x != 0) return;
-    
-    for(long long i = 0; i < N; i += n_total_threads){
-        arr[gid + i] = (gid + i) * 0.00001;
-    }
-}
-
-
-void kernel1_cpu(long long N){
-    float sum = 0.0;
-    for(long long i = 0; i < N; i++){
-        sum += i * 0.00001;
-    }    
-
-    printf("cpu: %f\n", sum);
-}
-
-
-
-
-
-
+#include <main.cuh>
 
 
 
@@ -71,7 +43,7 @@ int main(int argc, char **argv)
     printf("gpu: %f\n", sum);
     cudaFree(arr);
     
-    kernel1_cpu(N);
+
 
     
 
@@ -79,38 +51,4 @@ int main(int argc, char **argv)
 }
 
 
-
-
-
-
-// int main(int argc, char **argv)
-// {
-//     long long N = 100000000000;
-//     size_t size = N * sizeof(float);
-    
-//     float *arr_dev;
-//     float arr_host[N];
-
-//     // cudaMallocManaged(&a, size);
-//     cudaMalloc(&arr_dev, size);
-
-//     kernel1<<<1, 32>>>(arr_dev, N);
-
-//     cudaDeviceSynchronize();
-
-//     cudaMemcpy((BYTE *)arr_dev, (BYTE *)arr_host,
-//                             N * sizeof(float), cudaMemcpyHostToDevice);
-
-
-//     double sum;
-//     for(long long i = 0;i<N;i++){
-//         sum += arr_host[i];
-//     }
-
-//     printf("sum: %f\n", sum);
-
-//     cudaFree(arr_dev);
-    
-//     return 0;
-// }
 

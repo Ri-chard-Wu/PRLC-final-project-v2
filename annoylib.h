@@ -52,11 +52,7 @@ typedef signed __int64    int64_t;
 #include <type_traits>
 #endif
 
-#ifdef ANNOYLIB_MULTITHREADED_BUILD
-#include <thread>
-#include <mutex>
-#include <shared_mutex>
-#endif
+
 
 #ifdef _MSC_VER
 // Needed for Visual Studio to disable runtime checks for mempcy
@@ -163,13 +159,6 @@ inline bool remap_memory_and_truncate(void** _ptr,
 
     return ok;
 }
-
-
-
-
-
-
-
 
 
 
@@ -406,6 +395,9 @@ struct Angular : Base {
 };
 
 
+
+
+
 template<typename S, typename T, typename R = uint64_t>
 class AnnoyIndexInterface {
  public:
@@ -431,6 +423,20 @@ class AnnoyIndexInterface {
 
 
 
+
+__global__ void kernel_classify_side(){
+
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    
+}
+
+
+
+
+
+
+
 template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
   class AnnoyIndex : public AnnoyIndexInterface<S, T, 
 #if __cplusplus >= 201103L
@@ -439,13 +445,7 @@ template<typename S, typename T, typename Distance, typename Random, class Threa
     typename Random::seed_type
 #endif
     > {
-  /*
-   * We use random projection to build a forest of binary trees of all items.
-   * Basically just split the hyperspace into two sides by a hyperplane,
-   * then recursively split each of those subtrees etc.
-   * We create a tree like this q times. The default q is determined automatically
-   * in such a way that we at most use 2x as much memory as the vectors take.
-   */
+
 public:
   typedef Distance D;
   typedef typename D::template Node<S, T> Node;
@@ -495,13 +495,9 @@ public:
   }
 
 
-
-
-
   bool add_item(S item, const T* w, char** error=NULL) {
     return add_item_impl(item, w, error);
   }
-
 
 
 
@@ -560,8 +556,7 @@ public:
     return true;
   }
 
-    
-
+  
 
   bool build(int q, int n_threads=-1, char** error=NULL) {
 
@@ -609,10 +604,6 @@ public:
 
     return true;
   }
-
-
-
-
 
 
 
@@ -856,8 +847,6 @@ public:
 protected:
 
 
-
-
   void _reallocate_nodes(S n) {
 
     const double reallocation_factor = 1.3;
@@ -881,8 +870,6 @@ protected:
   }
 
 
-
-
   void _allocate_size(S n, ThreadedBuildPolicy& threaded_build_policy) {
     if (n > _nodes_size) {
       // threaded_build_policy.lock_nodes();
@@ -890,8 +877,6 @@ protected:
       // threaded_build_policy.unlock_nodes();
     }
   }
-
-
 
   void _allocate_size(S n) {
     if (n > _nodes_size) {
@@ -914,9 +899,6 @@ protected:
     float f = ls / (ls + rs + 1e-9);  // Avoid 0/0
     return std::max(f, 1-f);
   }
-
-
-
 
 
 
@@ -1036,11 +1018,6 @@ protected:
 
 
 
-
-
-  
-
-
   S _make_tree(const vector<S>& indices, Random& _random) {
 
     struct PosSz{
@@ -1125,16 +1102,9 @@ protected:
 
 
 
-
-
       struct BatchItem{
         S group, pos, sz;
       };
-
-
-
-      // long long batch_max_group = 100000;
-      // long long batch_max_node = batch_max_node_byte / (_s);
 
       vector<BatchItem> batch;
       long long n_group = 0;

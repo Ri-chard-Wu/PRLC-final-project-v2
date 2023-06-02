@@ -474,9 +474,10 @@ protected:
   };
 
   struct BatchItem{
-    BatchItem(int group): group(group) {}
+    BatchItem(int group): group(group), is_balanced(false) {}
     int group;
     int n_left, n_right;
+    bool is_balanced;
   };
 
 
@@ -541,11 +542,26 @@ public:
                         vector<Group> &groupArray, vector<S>& indices){
 
 
-    int batch_sz = 0;
+    // struct KernelMeta{
+    //   int needCompute;
+    //   int group_sz;
+    //   T splitVecArray[ANNOYLIB_V_ARRAY_SIZE];
+    // }
 
+    // size_t kmetaSz = offsetof(KernelMeta, splitVecArray) + _f * sizeof(T);
+
+    
+
+    int batch_sz = 0;
     for(int i = 0; i < batch.size(); i++){
       batch_sz += groupArray[batch[i].group].sz;
     }   
+
+    // -------------------------------------
+    // KernelMeta *kmetaArray_dev; 
+    // uint8_t *kmetaArray_host;
+    // cudaMalloc(&kmetaArray_dev, batch.size() * kmetaSz);
+    // kmetaArray_host = (uint8_t *)alloca(batch.size() * kmetaSz);
 
     // -------------------------------------
 
@@ -562,7 +578,7 @@ public:
       for(int idx = 0; idx < sz; idx++){
         
         Node *node = _get(indices[offset + idx]);
-        memcpy(iter, node, _s);
+        memcpy(iter, node->v, _f * sizeof(T));
         iter += _f;
       }
     }
@@ -591,13 +607,21 @@ public:
 
     // -------------------------------------
 
+    int *needCompute_dev, *needCompute_host;
+    cudaMalloc(&needCompute_dev, batch.size() * sizeof(int));
+    needCompute_host = new int[batch.size()];
+
+    // -------------------------------------
+
+    T *splitVecArray_dev, *splitVecArray_host;
+    cudaMalloc(&splitVecArray_dev, batch.size() * _f * sizeof(T));
+    splitVecArray_host =  new T[batch.size() * _f];
+    
+    // -------------------------------------
+
+
 
     for (int attempt = 0; attempt < 3; attempt++){
-
-
-      T *splitVecArray_dev, *splitVecArray_host;
-      cudaMalloc(&splitVecArray_dev, batch.size() * _f * sizeof(T));
-      splitVecArray_host =  new T[batch.size() * _f];
 
       for(int i = 0; i < batch.size(); i++){
         
@@ -614,17 +638,22 @@ public:
                       batch.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
 
       // -------------------------------------
+      
+      for(int i = 0; i < batch.size(); i++){
+        
+        if(batch[i].is_balanced) needCompute_host[i] = 0;
+        else needCompute_host[i] = 1;
+      }
+
+      cudaMemcpy((BYTE *)needCompute_dev, (BYTE *)needCompute_host, 
+                      batch.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+      // -------------------------------------
 
       int n_blocks = 32, n_threads_per_block = 128;
 
-      // struct KernelMeta{
-      //   int needCompute;
-      //   int group_sz;
-      //   T split[_f];
-      // }
-
       kernel_classifySideSmall<n_blocks, n_threads_per_block>(vecArray_dev,
-                     szArray_dev, splitVecArray_dev, sides_dev); 
+                     needCompute_dev, szArray_dev, splitVecArray_dev, sides_dev); 
 
       cudaDeviceSynchronize();
 
@@ -634,7 +663,7 @@ public:
                 batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
 
 
-      int offset_batch = 0;
+      int offset_batch = 0, balance_count = 0;
 
       for(int i = 0; i < batch.size(); i++){
 
@@ -644,15 +673,18 @@ public:
         group_moveSide(indices, sides_host + offset_batch, offset_indices, 
                                 sz_group, batch[i].n_left, batch[i].n_right);
         
+
+        if (_split_imbalance(batch[i].n_left, batch[i].n_right) < 0.95) {
+          batch[i].is_balanced = true;
+          balance_count++;
+        }
+
         int offset_batch += sz_group;
       }
 
-
+      if(balance_count == batch.size()) break;
 
     }
-
-
-
 
   }
 
@@ -739,12 +771,12 @@ public:
 
       group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
 
-      if (_split_imbalance(sz_group - n_right, n_right) < 0.95) break;
+      if (_split_imbalance(n_left, n_right) < 0.95) break;
     }
 
 
     // If we didn't find a hyperplane, just randomize sides as a last option
-    while (_split_imbalance(sz_group - n_right, n_right) > 0.99) {
+    while (_split_imbalance(n_left, n_right) > 0.99) {
 
       for(int i = 0; i < sz_group; i++){
         sides[i] = _random.flip();

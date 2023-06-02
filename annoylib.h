@@ -474,7 +474,9 @@ protected:
   };
 
   struct BatchItem{
-    S group, pos, sz;
+    BatchItem(int group): group(group) {}
+    int group;
+    int n_left, n_right;
   };
 
 
@@ -485,141 +487,6 @@ public:
   }
 
 
-
-
-  
-  void find_split(vector<S>& indices, int offset, int sz, Node *node){
-
-    vector<Node*> children;
-    for (size_t i = offset; i < offset + sz; i++) {
-      S j = indices[i];
-      Node* n = _get(j);
-      if (n) children.push_back(n);
-    }
-
-    D::create_split(children, _f, _s, _random, node); 
-  }
-
-
-
-
-  // kernel_clasify_side_small
-  S launchKernel_clasifySideSmall(vector<BatchItem> &batch, vector<Group> &groupArray, vector<S>& indices){
-
-
-    int total_node_num = 0;
-
-    for(int i = 0; i < batch.size(); i++){
-      total_node_num += batch[i].sz;
-    }   
-
-    // -------------------------------------
-
-    Node *nodeArray_dev, *nodeArray_host, *iter;
-    cudaMalloc(&nodeArray_dev, total_node_num * _s);
-    nodeArray_host = new Node[total_node_num];
-    iter = nodeArray_host;
-
-    for(int i = 0; i < batch.size(); i++){
-
-      int offset = groupArray[batch[i].group].pos + batch[i].pos;
-      int sz = batch[i].sz;
-      
-      for(int idx = 0; idx < sz; idx++){
-        
-        Node *node = _get(indices[offset + idx]);
-        memcpy(iter++, node, _s);
-      }
-    }
-
-    cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
-                    _s * total_node_num, cudaMemcpyHostToDevice);
-
-    // -------------------------------------
-
-
-    Node *splitArray_dev, *splitArray_host;
-    cudaMalloc(&splitArray_dev, batch.size() * _s);
-    splitArray_host = new Node[batch.size()];
-
-    for(int i = 0; i < batch.size(); i++){
-        
-      int offset = groupArray[batch[i].group].pos + batch[i].pos;
-      int sz = batch[i].sz;
-
-      find_split(indices, offset, sz, splitArray_host + i);
-    }
-
-
-    cudaMemcpy((BYTE *)splitArray_dev, (BYTE *)splitArray_host, 
-                    _s * batch.size(), cudaMemcpyHostToDevice);
-
-    // -------------------------------------
-
-    int *sides_dev, sides_host;
-    cudaMalloc(&sides_dev, total_node_num * sizeof(int));
-    sides_host = new int[total_node_num];
-
-    // -------------------------------------
-    
-    int *szArray_dev, *szArray_host;
-    cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
-    szArray_host = new int[batch.size()];
-
-    for(int i = 0; i < batch.size(); i++){
-      szArray_host[i] = batch[i].sz;
-    }
-
-    cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
-                    batch.size() * sizeof(int), cudaMemcpyHostToDevice);
-
-    // -------------------------------------
-
-    int n_blocks = 32, n_threads_per_block = 128;
-    
-    kernel_classifySideSmall<n_blocks, n_threads_per_block>(nodeArray_dev,
-                  total_node_num, szArray_dev, splitArray_dev, sides_dev); 
-
-    cudaDeviceSynchronize();
-
-    // -------------------------------------
-
-    cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
-              total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-    int offset_batch = 0;
-
-    for(int i = 0; i < batch.size(); i++){
-
-      int offset_indices = groupArray[batch[i].group].pos;
-      int sz_batchItem = batch[i].sz;
-
-
-
-      S *indices_tmp = new S[sz];
-      for(int j = 0; j < sz_batchItem; j ++){
-        indices_tmp[j] = indices[offset_indices + j];
-      }
-
-
-      int left = offset_indices, right = offset_indices + sz_batchItem - 1;
-
-      for(int j = 0; j < sz_batchItem; j ++){
-        
-        if(sides_host[offset_batch + j] == 1){
-          indices[left++] = indices_tmp[j];
-        }
-        else{
-          indices[right--] = indices_tmp[j];
-        }
-      }
-
-      int offset_batch += sz_batchItem;
-
-      delete indices_tmp;
-    }
-  }
 
 
 
@@ -648,8 +515,140 @@ public:
 
 
 
-  // kernel_clasify_side_large
-  void launchKernel_clasifySideLarge(vector<S>& indices, 
+
+
+  
+  void find_split(vector<S>& indices, int offset, int sz, Node *node){
+
+    vector<Node*> children;
+    for (size_t i = offset; i < offset + sz; i++) {
+      S j = indices[i];
+      Node* n = _get(j);
+      if (n) children.push_back(n);
+    }
+
+    D::create_split(children, _f, _s, _random, node); 
+  }
+
+
+
+
+  // kernel_classify_side_small
+  S launchKernel_classifySideSmall(vector<BatchItem> &batch, 
+                        vector<Group> &groupArray, vector<S>& indices){
+
+
+    int batch_sz = 0;
+
+    for(int i = 0; i < batch.size(); i++){
+      batch_sz += groupArray[batch[i].group].sz;
+    }   
+
+    // -------------------------------------
+
+    Node *nodeArray_dev, *nodeArray_host, *iter;
+    cudaMalloc(&nodeArray_dev, batch_sz * _s);
+    nodeArray_host = new Node[batch_sz];
+    iter = nodeArray_host;
+
+    for(int i = 0; i < batch.size(); i++){
+
+      int offset = groupArray[batch[i].group].pos;
+      int sz = groupArray[batch[i].group].sz;
+      
+      for(int idx = 0; idx < sz; idx++){
+        
+        Node *node = _get(indices[offset + idx]);
+        memcpy(iter++, node, _s);
+      }
+    }
+
+    cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
+                    _s * batch_sz, cudaMemcpyHostToDevice);
+
+    // -------------------------------------
+
+    int *sides_dev, sides_host;
+    cudaMalloc(&sides_dev, batch_sz * sizeof(int));
+    sides_host = new int[batch_sz];
+
+    // -------------------------------------
+    
+    int *szArray_dev, *szArray_host;
+    cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
+    szArray_host = new int[batch.size()];
+
+    for(int i = 0; i < batch.size(); i++){
+      szArray_host[i] = groupArray[batch[i].group].sz;
+    }
+
+    cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
+                    batch.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    // -------------------------------------
+
+
+    for (int attempt = 0; attempt < 3; attempt++){
+
+    }
+
+
+    Node *splitArray_dev, *splitArray_host;
+    cudaMalloc(&splitArray_dev, batch.size() * _s);
+    splitArray_host = new Node[batch.size()];
+
+    for(int i = 0; i < batch.size(); i++){
+        
+      int offset = groupArray[batch[i].group].pos;
+      int sz = batch[i].sz;
+
+      find_split(indices, offset, sz, splitArray_host + i);
+    }
+
+
+    cudaMemcpy((BYTE *)splitArray_dev, (BYTE *)splitArray_host, 
+                    _s * batch.size(), cudaMemcpyHostToDevice);
+
+    // -------------------------------------
+
+    int n_blocks = 32, n_threads_per_block = 128;
+    
+    kernel_classifySideSmall<n_blocks, n_threads_per_block>(nodeArray_dev,
+                  batch_sz, szArray_dev, splitArray_dev, sides_dev); 
+
+    cudaDeviceSynchronize();
+
+    // -------------------------------------
+
+    cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
+              batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+    int offset_batch = 0;
+
+    for(int i = 0; i < batch.size(); i++){
+
+      int offset_indices = groupArray[batch[i].group].pos;
+      int sz_group = groupArray[batch[i].group].sz;
+
+      group_moveSide(indices, sides_host + offset_batch, offset_indices, 
+                              sz_group, batch[i].n_left, batch[i].n_right);
+      
+      int offset_batch += sz_group;
+    }
+
+
+
+
+  }
+
+
+
+
+
+
+  // kernel_classify_side_large
+  void launchKernel_classifySideLarge(vector<S>& indices, 
                           vector<Group>& groupArray, int group_i){
 
     int offset = groupArray[group_i].pos;
@@ -659,9 +658,30 @@ public:
     int n_right, n_left;
 
 
+
+    Node *splitNode_dev, *splitNode_host;
+    cudaMalloc(&splitNode_dev, _s);
+    splitNode_host = new Node; //(Node*)alloca(_s);
+    
+    
+    Node *nodeArray_dev, *nodeArray_host, *iter;
+    cudaMalloc(&nodeArray_dev, batch_max_node * _s);
+    nodeArray_host = new Node[batch_sz];
+    
+    int *sides_dev;
+    cudaMalloc(&sides_dev, batch_sz * sizeof(int));
+
+
     for (int attempt = 0; attempt < 3; attempt++){
 
-      int batch_start = 0, batch_sz = batch_max_node;
+      int batch_start = 0, batch_sz;
+
+      // -------------------------------------
+
+      find_split(indices, offset, sz_group, splitNode_host);
+      cudaMemcpy((BYTE *)splitNode_dev, (BYTE *)splitNode_host, 
+                                        _s, cudaMemcpyHostToDevice);
+      // -------------------------------------
 
       while(1){
 
@@ -672,16 +692,10 @@ public:
           batch_sz = sz_group - batch_start;
         }
 
-
         // -------------------------------------
 
-        Node *nodeArray_dev, *nodeArray_host, *iter;
-        cudaMalloc(&nodeArray_dev, batch_sz * _s);
-        nodeArray_host = new Node[batch_sz];
         iter = nodeArray_host;
-
         for(int i = batch_start; i < batch_start + batch_sz; i++){
-
           Node *node = _get(indices[offset + i]);
           memcpy(iter++, node, _s);
         }
@@ -689,25 +703,7 @@ public:
         cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
                         _s * batch_sz, cudaMemcpyHostToDevice);
 
-
         // -------------------------------------
-
-        int *sides_dev;
-        cudaMalloc(&sides_dev, batch_sz * sizeof(int));
-
-        // -------------------------------------
-
-        Node *splitNode_dev, *splitNode_host;
-        cudaMalloc(&splitNode_dev, _s);
-        Node* splitNode_host = (Node*)alloca(_s); 
-        find_split(indices, offset, sz_group, splitNode_host);
-
-        cudaMemcpy((BYTE *)splitNode_dev, (BYTE *)splitNode_host, 
-                                          _s, cudaMemcpyHostToDevice);
-
-        // -------------------------------------
-        
-
 
         int n_blocks = 32, n_threads_per_block = 128;
         
@@ -725,12 +721,10 @@ public:
         if(batch_sz != batch_max_node) break;
       }
 
-
       group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
 
       if (_split_imbalance(sz_group - n_right, n_right) < 0.95) break;
     }
-
 
 
     // If we didn't find a hyperplane, just randomize sides as a last option
@@ -743,6 +737,14 @@ public:
       group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
     }
 
+
+    cudaFree(splitNode_dev);
+    cudaFree(nodeArray_dev);
+    cudaFree(sides_dev);
+    
+    delete sides;
+    delete splitNode_host;
+    delete nodeArray_host;
   }
 
   
@@ -835,7 +837,7 @@ public:
         if(!groupArray[group_i].can_split) continue;
         
         if(groupArray[group_i].sz > batch_max_node){
-          launchKernel_clasifySideLarge(indices, groupArray, group_i);
+          launchKernel_classifySideLarge(indices, groupArray, group_i);
           group_i++;
           continue;
         }
@@ -844,12 +846,12 @@ public:
 
           n_node += groupArray[group_i].sz;
           n_group += 1;          
-          batch.push_back(BatchItem(group_i, 0, groupArray[group_i].sz));
+          batch.push_back(BatchItem(group_i));
           group_i += 1
         }
         else{
             
-          launchKernel_clasifySideSmall(batch, groupArray, indices);
+          launchKernel_classifySideSmall(batch, groupArray, indices);
 
           batch.clear();
           n_node = 0;

@@ -464,12 +464,12 @@ class AnnoyIndex_GPU: private AnnoyIndex<S, T, Distance, Random, ThreadedBuildPo
 protected:
 
   struct Group{
-    Group(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
-    S pos;
-    S sz;
-    bool can_split;
+    Group(S pos, S sz, S parent_idx, int cid, S idx): pos(pos), sz(sz), 
+                    parent_idx(parent_idx), idx(idx), cid(cid), can_split(true){}
 
-    S parent_idx;
+    S pos, sz;
+    bool can_split;
+    S parent_idx, idx;
     int cid;
   };
 
@@ -490,16 +490,24 @@ public:
 
 
 
+  void group_getSideCount(int *sides, int sz_group, int& n_left, int& n_right){
+    
+    n_left = 0;
+    n_right = 0;
+
+    for(int i = 0; i < sz_group; i++){
+      if(sides[i] == 0) n_left++;
+      else n_right++;
+    }
+  }
 
 
-
-  void group_moveSide(vector<S>& indices, int *sides, int offset, int sz_group,
-                                         int& n_left, int& n_right){
+  void group_moveSide(vector<S>& indices, int *sides, int offset, int sz_group){
 
     // int offset = groupArray[group_i].pos;
     // int sz_group = groupArray[group_i].sz;
 
-    n_right = 0 ,n_left = 0;
+    int n_right = 0 ,n_left = 0;
     while(n_left + n_right < sz_group){
       
       if(sides[n_left] == 1){ // right
@@ -528,7 +536,6 @@ public:
       if (n) children.push_back(n);
     }
 
-
     Node *m = (Node*)alloca(_s);
     D::create_split(children, _f, _s, _random, m); 
     memcpy(splitVec, m->v, sizeof(T) * _f);
@@ -537,31 +544,14 @@ public:
 
 
 
-  // kernel_classify_side_small
   S launchKernel_classifySideSmall(vector<BatchItem> &batch, 
                         vector<Group> &groupArray, vector<S>& indices){
-
-
-    // struct KernelMeta{
-    //   int needCompute;
-    //   int group_sz;
-    //   T splitVecArray[ANNOYLIB_V_ARRAY_SIZE];
-    // }
-
-    // size_t kmetaSz = offsetof(KernelMeta, splitVecArray) + _f * sizeof(T);
-
     
-
     int batch_sz = 0;
     for(int i = 0; i < batch.size(); i++){
       batch_sz += groupArray[batch[i].group].sz;
     }   
 
-    // -------------------------------------
-    // KernelMeta *kmetaArray_dev; 
-    // uint8_t *kmetaArray_host;
-    // cudaMalloc(&kmetaArray_dev, batch.size() * kmetaSz);
-    // kmetaArray_host = (uint8_t *)alloca(batch.size() * kmetaSz);
 
     // -------------------------------------
 
@@ -667,16 +657,18 @@ public:
 
       for(int i = 0; i < batch.size(); i++){
 
+        if(batch[i].is_balanced) continue;
+
         int offset_indices = groupArray[batch[i].group].pos;
         int sz_group = groupArray[batch[i].group].sz;
 
-        group_moveSide(indices, sides_host + offset_batch, offset_indices, 
-                                sz_group, batch[i].n_left, batch[i].n_right);
-        
+        group_getSideCount(sides_host + offset_batch, sz_group, 
+                                      batch[i].n_left, batch[i].n_right);
 
         if (_split_imbalance(batch[i].n_left, batch[i].n_right) < 0.95) {
           batch[i].is_balanced = true;
           balance_count++;
+          group_moveSide(indices, sides_host + offset_batch, offset_indices, sz_group);          
         }
 
         int offset_batch += sz_group;
@@ -686,6 +678,29 @@ public:
 
     }
 
+
+
+    for(int i = 0; i < batch.size(); i++){
+
+      if(batch[i].is_balanced) continue;
+    
+      int offset_indices = groupArray[batch[i].group].pos;
+      int sz_group = groupArray[batch[i].group].sz;
+        
+      while (_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99) {
+
+        for(int i = 0; i < sz_group; i++){
+          sides_host[i] = _random.flip();
+        }
+
+        group_moveSide(indices, sides_host, offset_indices, sz_group);
+        group_getSideCount(sides_host, sz_group, batch[i].n_left, batch[i].n_right);
+      }
+
+    }
+
+
+
   }
 
 
@@ -693,7 +708,7 @@ public:
 
 
 
-  // kernel_classify_side_large
+
   void launchKernel_classifySideLarge(vector<S>& indices, 
                           vector<Group>& groupArray, int group_i){
 
@@ -769,9 +784,12 @@ public:
         if(batch_sz != batch_max_node) break;
       }
 
-      group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
+      group_getSideCount(sides, sz_group, n_left, n_right);
 
-      if (_split_imbalance(n_left, n_right) < 0.95) break;
+      if (_split_imbalance(n_left, n_right) < 0.95) {
+        group_moveSide(indices, sides, offset, sz_group);
+        break;
+      }
     }
 
 
@@ -782,7 +800,8 @@ public:
         sides[i] = _random.flip();
       }
 
-      group_moveSide(indices, sides, offset, sz_group, n_left, n_right);
+      group_moveSide(indices, sides, offset, sz_group);
+      group_getSideCount(sides, sz_group, n_left, n_right);
     }
 
 
@@ -800,15 +819,15 @@ public:
 
   S _make_tree(vector<S>& indices, Random& _random) {
 
-
-
     long long batch_max_group = 100000;
     long long batch_max_node_byte = (S)3e9;
     long long batch_max_node = batch_max_node_byte / (_s);
 
 
+    _allocate_size(_n_nodes + 1);
     vector<Group> groupArray; 
-    groupArray.push_back(Group(0, indices.size()));
+    groupArray.push_back(Group(0, indices.size(), -1, -1, _n_nodes++));
+
 
     bool done = false;
 
@@ -900,6 +919,21 @@ public:
         else{
             
           launchKernel_classifySideSmall(batch, groupArray, indices);
+
+          for(int i = 0; i < batch.size(); i++){
+          
+            int pos_left = groupArray[batch[i].group].pos;
+            int pos_right = pos_left + batch[i].n_left;
+            int parent_idx = groupArray[batch[i].group].idx;
+            _allocate_size(_n_nodes + 2);
+
+            groupArray.push_back(
+                Group(pos_left, batch[i].n_left,  parent_idx, 0, _n_nodes++));
+            groupArray.push_back(
+                Group(pos_right, batch[i].n_right, parent_idx, 1, _n_nodes++));
+
+          }
+
 
           batch.clear();
           n_node = 0;

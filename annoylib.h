@@ -1018,10 +1018,32 @@ protected:
 
 
 
+  // find_split(indices, groupArray, batch[batch_i], 
+  //                             splitArray_host + batch_i);
+  
+  void find_split(const vector<S>& indices, Node *node){
+
+    int offset_global = groupArray[batch_comp.group].pos;
+    int offset_local = batch_comp.pos;
+    int offset = offset_global + offset_local;
+    int sz = batch_comp.sz;
+    
+
+    vector<Node*> children;
+    for (size_t i = offset; i < offset + sz; i++) {
+      S j = indices[i];
+      Node* n = _get(j);
+      if (n) children.push_back(n);
+    }
+
+    D::create_split(children, _f, _s, _random, node); 
+  }
+
+
   S _make_tree(const vector<S>& indices, Random& _random) {
 
-    struct PosSz{
-      PosSz(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
+    struct Group{
+      Group(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
       S pos;
       S sz;
       bool can_split;
@@ -1035,25 +1057,25 @@ protected:
     long long batch_max_node = batch_max_node_byte / (_s);
 
 
-    vector<PosSz> posSz_vec; 
-    posSz_vec.push_back(PosSz(0, indices.size()));
+    vector<Group> groupArray; 
+    groupArray.push_back(Group(0, indices.size()));
 
     bool done = false;
 
     while(!done){
 
-      bool is_root = (posSz_vec.size() == 1);
+      bool is_root = (groupArray.size() == 1);
 
 
       // check set can_split.
-      for(int i = 0; i < posSz_vec.size(); i++){
+      for(int i = 0; i < groupArray.size(); i++){
         
-        if(!posSz_vec[i].can_split) continue;
+        if(!groupArray[i].can_split) continue;
 
-        S pos = posSz_vec[i].pos;
-        S sz = posSz_vec[i].sz;
-        S parent_idx = posSz_vec[i].parent_idx;
-        int cid = posSz_vec[i].cid;
+        S pos = groupArray[i].pos;
+        S sz = groupArray[i].sz;
+        S parent_idx = groupArray[i].parent_idx;
+        int cid = groupArray[i].cid;
         
 
         // if (indices.size() == 1 && !is_root)
@@ -1064,7 +1086,7 @@ protected:
           Node* p = _get(parent_idx);
           p->children[cid] = indices[pos];
 
-          posSz_vec[i].can_split = false;
+          groupArray[i].can_split = false;
 
           continue;
         }
@@ -1094,7 +1116,7 @@ protected:
           Node* p = _get(parent_idx);
           p->children[cid] = item;
 
-          posSz_vec[i].can_split = false;
+          groupArray[i].can_split = false;
 
           continue;
         }
@@ -1111,26 +1133,25 @@ protected:
       long long n_node = 0;
 
 
-      for(int group_i = 0; group_i < posSz_vec.size(); ){
+      for(int group_i = 0; group_i < groupArray.size(); ){
         
-        if(!posSz_vec[group_i].can_split) continue;
+        if(!groupArray[group_i].can_split) continue;
 
-        for(int node_i = 0; node_i < posSz_vec[group_i].sz; ){
+        for(int node_i = 0; node_i < groupArray[group_i].sz; ){
 
 
-
+          // check can lanuch.
           bool can_launch;
-
-          if(n_node + (posSz_vec[group_i].sz - node_i) <= batch_max_node  
+          if(n_node + (groupArray[group_i].sz - node_i) <= batch_max_node  
                                 && n_group + 1 <= batch_max_group){
            
             can_launch = false
 
-            n_node += posSz_vec[group_i].sz - node_i;
+            n_node += groupArray[group_i].sz - node_i;
             n_group += 1;
-            batch.push_back(BatchItem(group_i, node_i, posSz_vec[group_i].sz - node_i));
+            batch.push_back(BatchItem(group_i, node_i, groupArray[group_i].sz - node_i));
 
-            node_i += posSz_vec[group_i].sz - node_i;
+            node_i += groupArray[group_i].sz - node_i;
             group_i += 1;
           }
           else if(n_group + 1 > batch_max_group){
@@ -1138,7 +1159,7 @@ protected:
             can_launch = true;
 
           }
-          else if(n_node + (posSz_vec[group_i].sz - node_i) > batch_max_node){
+          else if(n_node + (groupArray[group_i].sz - node_i) > batch_max_node){
 
             can_launch = true;
 
@@ -1164,13 +1185,23 @@ protected:
             cudaMalloc(&nodeArray_dev, total_node_num * _s);
             nodeArray_host = new Node[total_node_num];
 
+            
+            Node *splitArray_dev, *splitArray_host;
+            splitArray_host = new Node[batch.size()];
+
+            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+              find_split(indices, groupArray, batch[batch_i], 
+                                          splitArray_host + batch_i);
+            }
+
+
             for(int batch_i = 0; batch_i < batch.size(); batch_i++){
               
               int group = batch[batch_i].group;
               int offset = batch[batch_i].pos;
               int sz = batch[batch_i].sz;
 
-              int gpos = posSz_vec[group].pos;
+              int gpos = groupArray[group].pos;
               
               for(int idx = gpos + offset; idx < gpos + offset + sz; idx++){
                 
@@ -1184,6 +1215,7 @@ protected:
                             _s * total_node_num, cudaMemcpyHostToDevice);
 
             int n_blocks = 32, n_threads_per_block = 128;
+            
             kernel_classify_side<n_blocks, n_threads_per_block>(\
                 nodeArray_dev, total_node_num, 
                 splitArray_dev, // not yet implemented.

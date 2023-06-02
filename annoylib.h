@@ -1176,6 +1176,7 @@ protected:
 
             int total_node_num = 0;
             int node_cpy_count = 0;
+            // S *indices_batch;
 
             for(int batch_i = 0; batch_i < batch.size(); batch_i++){
               total_node_num += batch[batch_i].sz;
@@ -1185,17 +1186,21 @@ protected:
             cudaMalloc(&nodeArray_dev, total_node_num * _s);
             nodeArray_host = new Node[total_node_num];
 
+            // indices_batch = new S[total_node_num];
+
             for(int batch_i = 0; batch_i < batch.size(); batch_i++){
               
               int group = batch[batch_i].group;
-              int offset = batch[batch_i].pos;
+              int offset_global = groupArray[group].pos;
+              int offset_local = batch[batch_i].pos;
+              int offset = offset_global + offset_local;
               int sz = batch[batch_i].sz;
 
-              int gpos = groupArray[group].pos;
               
-              for(int idx = gpos + offset; idx < gpos + offset + sz; idx++){
+              for(int idx = 0; idx < sz; idx++){
                 
-                Node *node = _get(indices[idx]);
+                // indices_batch[idx] = indices[offset + idx];
+                Node *node = _get(indices[offset + idx]);
                 memcpy(nodeArray_host + node_cpy_count, node, _s);
                 node_cpy_count++;
               }
@@ -1235,14 +1240,27 @@ protected:
             sides_host = new int[total_node_num];
 
             // -------------------------------------
+            
+            int *szArray_dev, *szArray_host;
+            cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
+            szArray_host = new int[batch.size()];
 
+            for(int i = 0; i < batch.size(); i++){
+              szArray_host[i] = batch[i].sz;
+            }
+
+            cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
+                            batch.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+            // -------------------------------------
 
             int n_blocks = 32, n_threads_per_block = 128;
             
             kernel_classify_side<n_blocks, n_threads_per_block>(\
                 nodeArray_dev, total_node_num, 
-                splitArray_dev, // not yet implemented.
-                sides_dev); // not yet implemented.
+                szArray_dev,
+                splitArray_dev, 
+                sides_dev); 
 
             cudaDeviceSynchronize();
 
@@ -1251,7 +1269,34 @@ protected:
                       total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
 
 
+            int offset_batch = 0;
 
+            for(int i = 0; i < batch.size(); i++){
+
+              int offset_indices = groupArray[batch[i].group].pos + batch[i].pos;
+              int sz = batch[i].sz;
+
+              S *indices_batchItem = new S[sz];
+              for(int j = 0; j < sz; j ++){
+
+                indices_batchItem[j] = indices[offset_indices + j];
+              }
+
+
+              int left = offset_indices, right = offset_indices + sz - 1;
+
+              for(int j = 0; j < sz; j ++){
+                
+                if(sides_host[offset_batch + j] == 1){
+                  indices[left++] = indices_batchItem[j];
+                }
+                else{
+                  indices[right--] = indices_batchItem[j];
+                }
+              }
+
+              int offset_batch += sz;
+            }
 
             batch.clear();
             n_node = 0;

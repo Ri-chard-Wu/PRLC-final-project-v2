@@ -1152,9 +1152,42 @@ protected:
 
           
           if(can_launch){
-
             
+            int total_node_num = 0;
+            int node_cpy_count = 0;
 
+            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+              total_node_num += batch[batch_i].sz;
+            }
+
+            Node *nodeArray_dev, *nodeArray_host;
+            cudaMalloc(&nodeArray_dev, total_node_num * _s);
+            nodeArray_host = new Node[total_node_num];
+
+            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+              
+              int group = batch[batch_i].group;
+              int offset = batch[batch_i].pos;
+              int sz = batch[batch_i].sz;
+
+              int gpos = posSz_vec[group].pos;
+              
+              for(int idx = gpos + offset; idx < gpos + offset + sz; idx++){
+                
+                Node *node = _get(indices[idx]);
+                memcpy(nodeArray_host + node_cpy_count, node, _s);
+                node_cpy_count++;
+              }
+            }
+
+            cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
+                            _s * total_node_num, cudaMemcpyHostToDevice);
+
+            int n_blocks = 32, n_threads_per_block = 128;
+            kernel_classify_side<n_blocks, n_threads_per_block>(\
+                nodeArray_dev, total_node_num, 
+                splitArray_dev, // not yet implemented.
+                sides_dev); // not yet implemented.
 
             batch.clear();
             n_node = 0;

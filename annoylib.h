@@ -432,8 +432,325 @@ __global__ void kernel_classify_side(){
 }
 
 
+template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
+class AnnoyIndex_GPU: private AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>{
+
+protected:
+
+  struct Group{
+    Group(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
+    S pos;
+    S sz;
+    bool can_split;
+
+    S parent_idx;
+    int cid;
+  };
+
+  struct BatchItem{
+    S group, pos, sz;
+  };
 
 
+public:
+
+  AnnoyIndex_GPU(int f): AnnoyIndex(f){
+
+  }
+
+
+
+
+  
+  void find_split(const vector<S>& indices, int offset, int sz, Node *node){
+
+    vector<Node*> children;
+    for (size_t i = offset; i < offset + sz; i++) {
+      S j = indices[i];
+      Node* n = _get(j);
+      if (n) children.push_back(n);
+    }
+
+    D::create_split(children, _f, _s, _random, node); 
+  }
+
+
+
+
+
+  S _make_tree_launch_kernel(vector<BatchItem> &batch, vector<Group> &groupArray, vector<S>& indices){
+
+    
+    // -------------------------------------
+
+    int total_node_num = 0;
+    int node_cpy_count = 0;
+    // S *indices_batch;
+
+    for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+      total_node_num += batch[batch_i].sz;
+    }            
+
+    Node *nodeArray_dev, *nodeArray_host;
+    cudaMalloc(&nodeArray_dev, total_node_num * _s);
+    nodeArray_host = new Node[total_node_num];
+
+    // indices_batch = new S[total_node_num];
+
+    for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+      
+      int group = batch[batch_i].group;
+      int offset_global = groupArray[group].pos;
+      int offset_local = batch[batch_i].pos;
+      int offset = offset_global + offset_local;
+      int sz = batch[batch_i].sz;
+
+      
+      for(int idx = 0; idx < sz; idx++){
+        
+        // indices_batch[idx] = indices[offset + idx];
+        Node *node = _get(indices[offset + idx]);
+        memcpy(nodeArray_host + node_cpy_count, node, _s);
+        node_cpy_count++;
+      }
+    }
+
+    cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
+                    _s * total_node_num, cudaMemcpyHostToDevice);
+
+
+
+    // -------------------------------------
+
+
+    Node *splitArray_dev, *splitArray_host;
+    cudaMalloc(&splitArray_dev, batch.size() * _s);
+    splitArray_host = new Node[batch.size()];
+
+    for(int batch_i = 0; batch_i < batch.size(); batch_i++){
+        
+      int offset_global = groupArray[batch[batch_i].group].pos;
+      int offset_local = batch[batch_i].pos;
+      int offset = offset_global + offset_local;
+      int sz = batch[batch_i].sz;
+
+      find_split(indices, offset, sz, splitArray_host + batch_i);
+    }
+
+    cudaMemcpy((BYTE *)splitArray_dev, (BYTE *)splitArray_host, 
+                    _s * batch.size(), cudaMemcpyHostToDevice);
+
+    // -------------------------------------
+
+    int *sides_dev, sides_host;
+    cudaMalloc(&sides_dev, total_node_num * sizeof(int));
+    sides_host = new int[total_node_num];
+
+    // -------------------------------------
+    
+    int *szArray_dev, *szArray_host;
+    cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
+    szArray_host = new int[batch.size()];
+
+    for(int i = 0; i < batch.size(); i++){
+      szArray_host[i] = batch[i].sz;
+    }
+
+    cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
+                    batch.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    // -------------------------------------
+
+    int n_blocks = 32, n_threads_per_block = 128;
+    
+    kernel_classify_side<n_blocks, n_threads_per_block>(\
+               nodeArray_dev, total_node_num, 
+               szArray_dev,
+               splitArray_dev, 
+               sides_dev); 
+
+    cudaDeviceSynchronize();
+
+    // -------------------------------------
+    
+    cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
+              total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+    int offset_batch = 0;
+
+    for(int i = 0; i < batch.size(); i++){
+
+      int offset_indices = groupArray[batch[i].group].pos + batch[i].pos;
+      int sz = batch[i].sz;
+
+      S *indices_batchItem = new S[sz];
+      for(int j = 0; j < sz; j ++){
+
+        indices_batchItem[j] = indices[offset_indices + j];
+      }
+
+
+      int left = offset_indices, right = offset_indices + sz - 1;
+
+      for(int j = 0; j < sz; j ++){
+        
+        if(sides_host[offset_batch + j] == 1){
+          indices[left++] = indices_batchItem[j];
+        }
+        else{
+          indices[right--] = indices_batchItem[j];
+        }
+      }
+
+      int offset_batch += sz;
+    }
+  }
+
+
+
+
+
+
+  S _make_tree(vector<S>& indices, Random& _random) {
+
+
+
+    long long batch_max_group = 100000;
+    long long batch_max_node_byte = (S)3e9;
+    long long batch_max_node = batch_max_node_byte / (_s);
+
+
+    vector<Group> groupArray; 
+    groupArray.push_back(Group(0, indices.size()));
+
+    bool done = false;
+
+    while(!done){
+
+      bool is_root = (groupArray.size() == 1);
+
+
+      // check set can_split.
+      for(int i = 0; i < groupArray.size(); i++){
+        
+        if(!groupArray[i].can_split) continue;
+
+        S pos = groupArray[i].pos;
+        S sz = groupArray[i].sz;
+        S parent_idx = groupArray[i].parent_idx;
+        int cid = groupArray[i].cid;
+        
+
+        // if (indices.size() == 1 && !is_root)
+        //   return indices[0];
+
+        if (sz == 1 && !is_root){
+
+          Node* p = _get(parent_idx);
+          p->children[cid] = indices[pos];
+
+          groupArray[i].can_split = false;
+
+          continue;
+        }
+          
+
+
+        // a leaf node.
+        if (sz <= (size_t)_K && \
+                (!is_root || (size_t)_n_items <= (size_t)_K || sz == 1)) {
+      
+
+          _allocate_size(_n_nodes + 1);
+          S item = _n_nodes++;
+          Node* m = _get(item);
+
+
+          m->n_descendants = is_root ? _n_items : sz;
+
+
+          // if (!indices.empty())
+          //   memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+
+          if (sz != 0){
+            memcpy(m->children, &indices[pos], sz * sizeof(S));
+          }   
+
+          Node* p = _get(parent_idx);
+          p->children[cid] = item;
+
+          groupArray[i].can_split = false;
+
+          continue;
+        }
+      }
+
+
+
+
+      vector<BatchItem> batch;
+      long long n_group = 0;
+      long long n_node = 0;
+
+
+      for(int group_i = 0; group_i < groupArray.size(); ){
+        
+        if(!groupArray[group_i].can_split) continue;
+
+        for(int node_i = 0; node_i < groupArray[group_i].sz; ){
+
+
+          // check can lanuch.
+          bool can_launch;
+          if(n_node + (groupArray[group_i].sz - node_i) <= batch_max_node  
+                                && n_group + 1 <= batch_max_group){
+           
+            can_launch = false
+
+            n_node += groupArray[group_i].sz - node_i;
+            n_group += 1;
+            batch.push_back(BatchItem(group_i, node_i, groupArray[group_i].sz - node_i));
+
+            node_i += groupArray[group_i].sz - node_i;
+            group_i += 1;
+          }
+          else if(n_group + 1 > batch_max_group){
+
+            can_launch = true;
+
+          }
+          else if(n_node + (groupArray[group_i].sz - node_i) > batch_max_node){
+
+            can_launch = true;
+
+            n_node += batch_max_node - n_node;
+            n_group += 1;
+            batch.push_back(BatchItem(group_i, node_i, batch_max_node - n_node));
+            
+            node_i += batch_max_node - n_node;
+          }
+
+
+          
+          if(can_launch){
+            
+            _make_tree_launch_kernel(batch, groupArray, indice);
+
+            batch.clear();
+            n_node = 0;
+            n_group = 0;
+          }
+
+          
+        }
+      }   
+    }
+  }
+
+
+
+};
 
 
 
@@ -902,420 +1219,34 @@ protected:
 
 
 
-  // S _make_tree(const vector<S>& indices, bool is_root, Random& _random, 
-  //                             ThreadedBuildPolicy& threaded_build_policy) {
+  S _make_tree(const vector<S>& indices, bool is_root, Random& _random, 
+                              ThreadedBuildPolicy& threaded_build_policy) {
 
 
 
 
-  //   if (indices.size() == 1 && !is_root)
-  //     return indices[0];
+    if (indices.size() == 1 && !is_root)
+      return indices[0];
 
 
-  //   // a leaf node.
-  //   if (indices.size() <= (size_t)_K && \
-  //           (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
+    // a leaf node.
+    if (indices.size() <= (size_t)_K && \
+            (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
    
 
-  //     _allocate_size(_n_nodes + 1, threaded_build_policy);
-  //     S item = _n_nodes++;
-  //     Node* m = _get(item);
+      _allocate_size(_n_nodes + 1, threaded_build_policy);
+      S item = _n_nodes++;
+      Node* m = _get(item);
 
 
-  //     m->n_descendants = is_root ? _n_items : (S)indices.size();
+      m->n_descendants = is_root ? _n_items : (S)indices.size();
 
-  //     // use all spaces for vector to store > 2 child indices.
-  //     if (!indices.empty())
-  //       memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+      // use all spaces for vector to store > 2 child indices.
+      if (!indices.empty())
+        memcpy(m->children, &indices[0], indices.size() * sizeof(S));
 
-  //     return item;
-  //   }
-
-
-
-  //   vector<Node*> children;
-  //   for (size_t i = 0; i < indices.size(); i++) {
-  //     S j = indices[i];
-  //     Node* n = _get(j);
-  //     if (n)
-  //       children.push_back(n);
-  //   }
-
-
-
-
-  //   vector<S> children_indices[2];
-  //   Node* m = (Node*)alloca(_s);
-
-  //   int attempt;
-  //   for (attempt = 0; attempt < 3; attempt++) {
-
-      
-
-  //     children_indices[0].clear();
-  //     children_indices[1].clear();
-
-  //     D::create_split(children, _f, _s, _random, m); 
-      
-  //     for (size_t i = 0; i < indices.size(); i++) { 
-        
-  //       S j = indices[i];
-  //       Node* n = _get(j);
-        
-  //       if (n) {
-  //         bool side = D::side(m, n->v, _f, _random);
-  //         children_indices[side].push_back(j);
-  //       } 
-  //     }
-
-  //     if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
-  //       break;
-  //   }
-
-
-
-
-
-  //   // If we didn not find a hyperplane, just randomize sides as a last option
-  //   while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
-
-
-  //     children_indices[0].clear();
-  //     children_indices[1].clear();
-
-  //     // Set the vector to 0.0
-  //     for (int z = 0; z < _f; z++)
-  //       m->v[z] = 0;
-
-  //     for (size_t i = 0; i < indices.size(); i++) {
-  //       S j = indices[i];
-  //       children_indices[_random.flip()].push_back(j);
-  //     }
-  //   }
-
-
-
-
-  //   int flip = (children_indices[0].size() > children_indices[1].size());
-
-  //   m->n_descendants = is_root ? _n_items : (S)indices.size();
-  //   for (int side = 0; side < 2; side++) {
-  //     m->children[side] = _make_tree(children_indices[side], false,
-  //                                      _random, threaded_build_policy);
-  //   }
-
-
-
-  //   _allocate_size(_n_nodes + 1, threaded_build_policy);
-  //   S item = _n_nodes++;
-
-  //   memcpy(_get(item), m, _s);
-
-  //   return item;
-  // }
-
-
-
-
-
-  
-  void find_split(const vector<S>& indices, int offset, int sz, Node *node){
-
-    // int offset_global = groupArray[batch_comp.group].pos;
-    // int offset_local = batch_comp.pos;
-    // int offset = offset_global + offset_local;
-    // int sz = batch_comp.sz;
-    
-
-    vector<Node*> children;
-    for (size_t i = offset; i < offset + sz; i++) {
-      S j = indices[i];
-      Node* n = _get(j);
-      if (n) children.push_back(n);
+      return item;
     }
-
-    D::create_split(children, _f, _s, _random, node); 
-  }
-
-
-  S _make_tree(const vector<S>& indices, Random& _random) {
-
-    struct Group{
-      Group(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
-      S pos;
-      S sz;
-      bool can_split;
-
-      S parent_idx;
-      int cid;
-    };
-
-    long long batch_max_group = 100000;
-    long long batch_max_node_byte = (S)3e9;
-    long long batch_max_node = batch_max_node_byte / (_s);
-
-
-    vector<Group> groupArray; 
-    groupArray.push_back(Group(0, indices.size()));
-
-    bool done = false;
-
-    while(!done){
-
-      bool is_root = (groupArray.size() == 1);
-
-
-      // check set can_split.
-      for(int i = 0; i < groupArray.size(); i++){
-        
-        if(!groupArray[i].can_split) continue;
-
-        S pos = groupArray[i].pos;
-        S sz = groupArray[i].sz;
-        S parent_idx = groupArray[i].parent_idx;
-        int cid = groupArray[i].cid;
-        
-
-        // if (indices.size() == 1 && !is_root)
-        //   return indices[0];
-
-        if (sz == 1 && !is_root){
-
-          Node* p = _get(parent_idx);
-          p->children[cid] = indices[pos];
-
-          groupArray[i].can_split = false;
-
-          continue;
-        }
-          
-
-
-        // a leaf node.
-        if (sz <= (size_t)_K && \
-                (!is_root || (size_t)_n_items <= (size_t)_K || sz == 1)) {
-      
-
-          _allocate_size(_n_nodes + 1);
-          S item = _n_nodes++;
-          Node* m = _get(item);
-
-
-          m->n_descendants = is_root ? _n_items : sz;
-
-
-          // if (!indices.empty())
-          //   memcpy(m->children, &indices[0], indices.size() * sizeof(S));
-
-          if (sz != 0){
-            memcpy(m->children, &indices[pos], sz * sizeof(S));
-          }   
-
-          Node* p = _get(parent_idx);
-          p->children[cid] = item;
-
-          groupArray[i].can_split = false;
-
-          continue;
-        }
-      }
-
-
-
-      struct BatchItem{
-        S group, pos, sz;
-      };
-
-      vector<BatchItem> batch;
-      long long n_group = 0;
-      long long n_node = 0;
-
-
-      for(int group_i = 0; group_i < groupArray.size(); ){
-        
-        if(!groupArray[group_i].can_split) continue;
-
-        for(int node_i = 0; node_i < groupArray[group_i].sz; ){
-
-
-          // check can lanuch.
-          bool can_launch;
-          if(n_node + (groupArray[group_i].sz - node_i) <= batch_max_node  
-                                && n_group + 1 <= batch_max_group){
-           
-            can_launch = false
-
-            n_node += groupArray[group_i].sz - node_i;
-            n_group += 1;
-            batch.push_back(BatchItem(group_i, node_i, groupArray[group_i].sz - node_i));
-
-            node_i += groupArray[group_i].sz - node_i;
-            group_i += 1;
-          }
-          else if(n_group + 1 > batch_max_group){
-
-            can_launch = true;
-
-          }
-          else if(n_node + (groupArray[group_i].sz - node_i) > batch_max_node){
-
-            can_launch = true;
-
-            n_node += batch_max_node - n_node;
-            n_group += 1;
-            batch.push_back(BatchItem(group_i, node_i, batch_max_node - n_node));
-            
-            node_i += batch_max_node - n_node;
-          }
-
-
-          
-          if(can_launch){
-            
-            // -------------------------------------
-
-            int total_node_num = 0;
-            int node_cpy_count = 0;
-            // S *indices_batch;
-
-            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
-              total_node_num += batch[batch_i].sz;
-            }            
-
-            Node *nodeArray_dev, *nodeArray_host;
-            cudaMalloc(&nodeArray_dev, total_node_num * _s);
-            nodeArray_host = new Node[total_node_num];
-
-            // indices_batch = new S[total_node_num];
-
-            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
-              
-              int group = batch[batch_i].group;
-              int offset_global = groupArray[group].pos;
-              int offset_local = batch[batch_i].pos;
-              int offset = offset_global + offset_local;
-              int sz = batch[batch_i].sz;
-
-              
-              for(int idx = 0; idx < sz; idx++){
-                
-                // indices_batch[idx] = indices[offset + idx];
-                Node *node = _get(indices[offset + idx]);
-                memcpy(nodeArray_host + node_cpy_count, node, _s);
-                node_cpy_count++;
-              }
-            }
-
-            cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
-                            _s * total_node_num, cudaMemcpyHostToDevice);
-
-
-
-            // -------------------------------------
-
-
-            Node *splitArray_dev, *splitArray_host;
-            cudaMalloc(&splitArray_dev, batch.size() * _s);
-            splitArray_host = new Node[batch.size()];
-
-            for(int batch_i = 0; batch_i < batch.size(); batch_i++){
-                
-              int offset_global = groupArray[batch[batch_i].group].pos;
-              int offset_local = batch[batch_i].pos;
-              int offset = offset_global + offset_local;
-              int sz = batch[batch_i].sz;
-
-              find_split(indices, offset, sz, splitArray_host + batch_i);
-            }
-
-            cudaMemcpy((BYTE *)splitArray_dev, (BYTE *)splitArray_host, 
-                            _s * batch.size(), cudaMemcpyHostToDevice);
-
-
-
-            // -------------------------------------
-
-            int *sides_dev, sides_host;
-            cudaMalloc(&sides_dev, total_node_num * sizeof(int));
-            sides_host = new int[total_node_num];
-
-            // -------------------------------------
-            
-            int *szArray_dev, *szArray_host;
-            cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
-            szArray_host = new int[batch.size()];
-
-            for(int i = 0; i < batch.size(); i++){
-              szArray_host[i] = batch[i].sz;
-            }
-
-            cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
-                            batch.size() * sizeof(int), cudaMemcpyHostToDevice);
-
-            // -------------------------------------
-
-            int n_blocks = 32, n_threads_per_block = 128;
-            
-            kernel_classify_side<n_blocks, n_threads_per_block>(\
-                nodeArray_dev, total_node_num, 
-                szArray_dev,
-                splitArray_dev, 
-                sides_dev); 
-
-            cudaDeviceSynchronize();
-
-            
-            cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
-                      total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-            int offset_batch = 0;
-
-            for(int i = 0; i < batch.size(); i++){
-
-              int offset_indices = groupArray[batch[i].group].pos + batch[i].pos;
-              int sz = batch[i].sz;
-
-              S *indices_batchItem = new S[sz];
-              for(int j = 0; j < sz; j ++){
-
-                indices_batchItem[j] = indices[offset_indices + j];
-              }
-
-
-              int left = offset_indices, right = offset_indices + sz - 1;
-
-              for(int j = 0; j < sz; j ++){
-                
-                if(sides_host[offset_batch + j] == 1){
-                  indices[left++] = indices_batchItem[j];
-                }
-                else{
-                  indices[right--] = indices_batchItem[j];
-                }
-              }
-
-              int offset_batch += sz;
-            }
-
-            batch.clear();
-            n_node = 0;
-            n_group = 0;
-          }
-
-          
-        }
-
-
-
-      }   
-
-
-    }
-
-
-
-
 
 
 
@@ -1323,7 +1254,8 @@ protected:
     for (size_t i = 0; i < indices.size(); i++) {
       S j = indices[i];
       Node* n = _get(j);
-      if(n) children.push_back(n);
+      if (n)
+        children.push_back(n);
     }
 
 
@@ -1379,6 +1311,10 @@ protected:
     }
 
 
+
+
+    int flip = (children_indices[0].size() > children_indices[1].size());
+
     m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
       m->children[side] = _make_tree(children_indices[side], false,
@@ -1386,18 +1322,14 @@ protected:
     }
 
 
-    _allocate_size(_n_nodes + 1);
+
+    _allocate_size(_n_nodes + 1, threaded_build_policy);
     S item = _n_nodes++;
 
     memcpy(_get(item), m, _s);
 
     return item;
   }
-
-
-
-
-
 
 
 

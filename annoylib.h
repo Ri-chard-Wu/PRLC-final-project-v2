@@ -1053,7 +1053,7 @@ protected:
       int cid;
     };
 
-    long long batch_max_split = 100000;
+    long long batch_max_group = 100000;
     long long batch_max_node_byte = (S)3e9;
     long long batch_max_node = batch_max_node_byte / (_s);
 
@@ -1126,18 +1126,77 @@ protected:
 
 
 
-      // long long batch_max_split = 100000;
-      // long long batch_max_node_byte = (S)3e9;
+
+      struct BatchItem{
+        S group, pos, sz;
+      };
+
+
+
+      // long long batch_max_group = 100000;
       // long long batch_max_node = batch_max_node_byte / (_s);
 
+      vector<BatchItem> batch;
+      long long n_group = 0;
+      long long n_node = 0;
 
-      for(int i = 0; i < posSz_vec.size(); i++){
+
+      for(int group_i = 0; group_i < posSz_vec.size(); ){
         
-        if(!posSz_vec[i].can_split) continue;
+        if(!posSz_vec[group_i].can_split) continue;
+
+        for(int node_i = 0; node_i < posSz_vec[group_i].sz; ){
 
 
 
-      }      
+          bool can_launch;
+
+          if(n_node + (posSz_vec[group_i].sz - node_i) <= batch_max_node  
+                                && n_group + 1 <= batch_max_group){
+           
+            can_launch = false
+
+            n_node += posSz_vec[group_i].sz - node_i;
+            n_group += 1;
+            batch.push_back(BatchItem(group_i, node_i, posSz_vec[group_i].sz - node_i));
+
+            node_i += posSz_vec[group_i].sz - node_i;
+            group_i += 1;
+          }
+          else if(n_group + 1 > batch_max_group){
+
+            can_launch = true;
+
+          }
+          else if(n_node + (posSz_vec[group_i].sz - node_i) > batch_max_node){
+
+            can_launch = true;
+
+            n_node += batch_max_node - n_node;
+            n_group += 1;
+            batch.push_back(BatchItem(group_i, node_i, batch_max_node - n_node));
+            
+            node_i += batch_max_node - n_node;
+          }
+
+
+          
+          if(can_launch){
+
+            
+
+
+            batch.clear();
+            n_node = 0;
+            n_group = 0;
+          }
+
+          
+        }
+
+
+
+      }   
 
 
     }

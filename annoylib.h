@@ -1044,10 +1044,19 @@ protected:
   S _make_tree(const vector<S>& indices, Random& _random) {
 
     struct PosSz{
-      PosSz(S pos, S sz): pos(pos), sz(sz){}
+      PosSz(S pos, S sz): pos(pos), sz(sz), can_split(true), parent_idx(-1){}
       S pos;
       S sz;
+      bool can_split;
+
+      S parent_idx;
+      int cid;
     };
+
+    long long batch_max_split = 100000;
+    long long batch_max_node_byte = (S)3e9;
+    long long batch_max_node = batch_max_node_byte / (_s);
+
 
     vector<PosSz> posSz_vec; 
     posSz_vec.push_back(PosSz(0, indices.size()));
@@ -1056,37 +1065,86 @@ protected:
 
     while(!done){
 
+      bool is_root = (posSz_vec.size() == 1);
+
+
+      // check set can_split.
       for(int i = 0; i < posSz_vec.size(); i++){
         
-        posSz_vec[i]
+        if(!posSz_vec[i].can_split) continue;
+
+        S pos = posSz_vec[i].pos;
+        S sz = posSz_vec[i].sz;
+        S parent_idx = posSz_vec[i].parent_idx;
+        int cid = posSz_vec[i].cid;
+        
+
+        // if (indices.size() == 1 && !is_root)
+        //   return indices[0];
+
+        if (sz == 1 && !is_root){
+
+          Node* p = _get(parent_idx);
+          p->children[cid] = indices[pos];
+
+          posSz_vec[i].can_split = false;
+
+          continue;
+        }
+          
 
 
+        // a leaf node.
+        if (sz <= (size_t)_K && \
+                (!is_root || (size_t)_n_items <= (size_t)_K || sz == 1)) {
+      
+
+          _allocate_size(_n_nodes + 1);
+          S item = _n_nodes++;
+          Node* m = _get(item);
+
+
+          m->n_descendants = is_root ? _n_items : sz;
+
+
+          // if (!indices.empty())
+          //   memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+
+          if (sz != 0){
+            memcpy(m->children, &indices[pos], sz * sizeof(S));
+          }   
+
+          Node* p = _get(parent_idx);
+          p->children[cid] = item;
+
+          posSz_vec[i].can_split = false;
+
+          continue;
+        }
       }
+
+
+
+
+      // long long batch_max_split = 100000;
+      // long long batch_max_node_byte = (S)3e9;
+      // long long batch_max_node = batch_max_node_byte / (_s);
+
+
+      for(int i = 0; i < posSz_vec.size(); i++){
+        
+        if(!posSz_vec[i].can_split) continue;
+
+
+
+      }      
+
+
     }
 
 
-    if (indices.size() == 1 && !is_root)
-      return indices[0];
 
 
-    // a leaf node.
-    if (indices.size() <= (size_t)_K && \
-            (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
-   
-
-      _allocate_size(_n_nodes + 1);
-      S item = _n_nodes++;
-      Node* m = _get(item);
-
-
-      m->n_descendants = is_root ? _n_items : (S)indices.size();
-
-      // use all spaces for vector to store > 2 child indices.
-      if (!indices.empty())
-        memcpy(m->children, &indices[0], indices.size() * sizeof(S));
-
-      return item;
-    }
 
 
 
@@ -1094,8 +1152,7 @@ protected:
     for (size_t i = 0; i < indices.size(); i++) {
       S j = indices[i];
       Node* n = _get(j);
-      if (n)
-        children.push_back(n);
+      if(n) children.push_back(n);
     }
 
 
@@ -1151,16 +1208,11 @@ protected:
     }
 
 
-
-
-    int flip = (children_indices[0].size() > children_indices[1].size());
-
     m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
       m->children[side] = _make_tree(children_indices[side], false,
                                        _random, threaded_build_policy);
     }
-
 
 
     _allocate_size(_n_nodes + 1);

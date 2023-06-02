@@ -253,6 +253,14 @@ inline void two_means(const vector<Node*>& nodes, int f,
 }
 
 
+template<typename S>
+void swap(vector<S>& indices, int id1, int id2){
+  S tmp = indices[id1];
+  indices[id1] = indices[id2];
+  indices[id2] = tmp;
+}
+
+
 } // namespace
 
 
@@ -611,92 +619,93 @@ public:
 
 
   // kernel_clasify_side_large
-  void launchKernel_clasifySideLarge(vector<S>& indices, vector<Group>& groupArray, int group_i){
+  void launchKernel_clasifySideLarge(vector<S>& indices, 
+                          vector<Group>& groupArray, int group_i){
 
     int offset = groupArray[group_i].pos;
     int sz_group = groupArray[group_i].sz;
     
+    int *sides = new int[sz_group];
 
 
+    for (int attempt = 0; attempt < 3; attempt++){
+
+      int batch_start = 0, batch_sz = batch_max_node;
+
+      while(1){
+
+        if(batch_start + batch_max_node - 1 < sz_group){
+          batch_sz = batch_max_node;
+        }
+        else{
+          batch_sz = sz_group - batch_start;
+        }
 
 
-    int batch_start = 0, batch_sz;
-    while(1){
+        // -------------------------------------
 
-      if(batch_start + batch_max_node - 1 < sz_group){
-        batch_sz = batch_max_node;
+        Node *nodeArray_dev, *nodeArray_host, *iter;
+        cudaMalloc(&nodeArray_dev, batch_sz * _s);
+        nodeArray_host = new Node[batch_sz];
+        iter = nodeArray_host;
+
+        for(int i = batch_start; i < batch_start + batch_sz; i++){
+
+          Node *node = _get(indices[offset + i]);
+          memcpy(iter++, node, _s);
+        }
+
+        cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
+                        _s * batch_sz, cudaMemcpyHostToDevice);
+
+
+        // -------------------------------------
+
+        int *sides_dev;
+        cudaMalloc(&sides_dev, batch_sz * sizeof(int));
+
+        // -------------------------------------
+
+        Node *splitNode_dev, *splitNode_host;
+        cudaMalloc(&splitNode_dev, _s);
+        Node* splitNode_host = (Node*)alloca(_s); 
+        find_split(indices, offset, sz_group, splitNode_host);
+
+        cudaMemcpy((BYTE *)splitNode_dev, (BYTE *)splitNode_host, 
+                                          _s, cudaMemcpyHostToDevice);
+
+        // -------------------------------------
+        
+
+
+        int n_blocks = 32, n_threads_per_block = 128;
+        
+        kernel_classifySideLarge<n_blocks, n_threads_per_block>(nodeArray_dev,
+                      batch_sz, splitNode_dev, sides_dev); 
+
+        cudaDeviceSynchronize();
+
+        // -------------------------------------
+
+        cudaMemcpy((BYTE *)(sides + batch_start), (BYTE *)sides_dev, 
+                  batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
+
+        batch_start += batch_sz;
+        if(batch_sz != batch_max_node) break;
       }
-      else{
-        batch_sz = sz_group - batch_start;
+
+
+      int n_right = 0;
+      for(int i = 0 ; i < sz_group; i++){
+        
+        if(sides[i] == 1){
+          swap(indices, offset + n_right, offset + i);
+          n_right++;
+        }
       }
-
-
-      // -------------------------------------
-
-      Node *nodeArray_dev, *nodeArray_host, *iter;
-      cudaMalloc(&nodeArray_dev, batch_sz * _s);
-      nodeArray_host = new Node[batch_sz];
-      iter = nodeArray_host;
-
-      for(int i = batch_start; i < batch_start + batch_sz; i++){
-
-        Node *node = _get(indices[offset + i]);
-        memcpy(iter++, node, _s);
-      }
-
-      cudaMemcpy((BYTE *)nodeArray_dev, (BYTE *)nodeArray_host, 
-                      _s * batch_sz, cudaMemcpyHostToDevice);
-
-
-      // -------------------------------------
-
-      int *sides_dev, sides_host;
-      cudaMalloc(&sides_dev, batch_sz * sizeof(int));
-      sides_host = new int[batch_sz];
-
-      // -------------------------------------
-
-      Node *splitNode_dev, *splitNode_host;
-      cudaMalloc(&splitNode_dev, _s);
-      Node* splitNode_host = (Node*)alloca(_s); 
-      find_split(indices, offset, sz_group, splitNode_host);
-
-      cudaMemcpy((BYTE *)splitNode_dev, (BYTE *)splitNode_host, 
-                                        _s, cudaMemcpyHostToDevice);
-
-      // -------------------------------------
       
 
-
-      int n_blocks = 32, n_threads_per_block = 128;
-      
-      kernel_classifySideLarge<n_blocks, n_threads_per_block>(nodeArray_dev,
-                    batch_sz, splitNode_dev, sides_dev); 
-
-      cudaDeviceSynchronize();
-
-      // -------------------------------------
-
-      cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
-                total_node_num * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      batch_start += batch_sz;
+      if (_split_imbalance(sz_group - n_right, n_right) < 0.95) break;
     }
 
   }
@@ -1274,6 +1283,13 @@ protected:
   }
 
 
+
+  double _split_imbalance(int left_sz, int right_sz) {
+    double ls = (float)left_sz;
+    double rs = (float)right_sz;
+    float f = ls / (ls + rs + 1e-9);  // Avoid 0/0
+    return std::max(f, 1-f);
+  }
 
 
   double _split_imbalance(const vector<S>& left_indices, const vector<S>& right_indices) {

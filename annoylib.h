@@ -955,7 +955,6 @@ public:
 
   S _make_tree(vector<S>& indices, Random& _random) {
 
-
     _allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
     Node* m = _get(item); 
@@ -975,13 +974,11 @@ public:
     groupArray.push_back(Group(0, indices.size(), item));
 
 
-    bool done = false;
+    // handle too-large groups.
+    while(1){
 
-    while(!done){
-
-      Batch batch = new Batch(min(groupArray.size(), Batch::batch_max_group), &groupArray);
-
-      for(int group_i = 0; group_i < groupArray.size(); ){
+      bool done = true;
+      for(int group_i = 0; group_i < groupArray.size(); group_i++;){
                 
         if(groupArray[group_i].sz > Batch::batch_max_node){
 
@@ -989,31 +986,36 @@ public:
           T *splitVec = new T[_f];
           
           launchKernel_classifySideLarge(indices, groupArray, group_i, n_left, n_right, splitVec);
-
           update_groupArray(indices, groupArray, group_i, n_left, n_right, splitVec);
 
-          group_i++;
-          continue;
+          done = false;
         }
+      }
+
+      if(done) break;
+    }
+    
 
 
-        if(batch.can_push(group_i)){     
-          batch.push_back(group_i);
-          group_i += 1
-        }
-        else{
-            
-          launchKernel_classifySideSmall(batch, groupArray, indices);
+    // handle smaller groups.
+   
+    Batch batch = new Batch(min(groupArray.size(), Batch::batch_max_group), &groupArray);
 
-          for(int i = 0; i < batch.size(); i++){
-            
-            update_groupArray(indices, groupArray, batch[i].group, batch[i].n_left,
-                                         batch[i].n_right, batch.get_splitVec(i));
-          }
+    while(groupArray.size() > 0){
 
-          batch.clear();
-        }
+      for(int group_i = 0; group_i < groupArray.size(); group_i++){
+
+        if(batch.can_push(group_i)) batch.push_back(group_i);
+        else break;
       }   
+
+      launchKernel_classifySideSmall(batch, groupArray, indices);
+      for(int i = 0; i < batch.size(); i++){
+        update_groupArray(indices, groupArray, batch[i].group, batch[i].n_left,
+                                      batch[i].n_right, batch.get_splitVec(i));
+      }
+
+      batch.clear();
     }
   }
 

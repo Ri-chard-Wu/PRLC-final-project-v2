@@ -484,9 +484,15 @@ protected:
 
   struct Batch{
 
-    Batch(int n_group): n(0){
-      splitVecArray = new T[_f * n_group];
-      bpArray = new BatchPack[n_group];
+
+    static long long batch_max_group;
+    static long long batch_max_node_byte;
+    static long long batch_max_node;
+
+    Batch(int n_group_alloc, vector<Group> *groupArray): 
+                  n_group(0), n_node(0), groupArray(groupArray){
+      splitVecArray = new T[_f * n_group_alloc];
+      bpArray = new BatchPack[n_group_alloc];
     }
 
     ~Batch(int n_group){
@@ -499,24 +505,45 @@ protected:
         return bpArray[group];
     }
 
-    void push_back(int group){
+    bool can_push(int group_i){
+        return (n_node + (* groupArray)[group_i].sz <= Batch::batch_max_node) 
+                                    && (n_group + 1 <= Batch::batch_max_group);
+    }
 
-      bpArray[n++].group = group;
+    void push_back(int group_i){
+      
+      bpArray[n_group].group = group_i;
+
+      n_node += (* groupArray)[group_i].sz;
+      n_group++;
     }
 
     int size(){
-      return n;
+      return n_group;
     }
 
     T * get_splitVec(int idx){
       return splitVecArray + idx * _f;
     }
 
+    void clear(){
+      n_group = 0;
+      n_node = 0;
+    }
+
     BatchPack *bpArray;
     T *splitVecArray;
-    int n;
+    long long n_group;
+    long long n_node;
+    vector<Group> *groupArray;
 
   }
+
+  long long Batch::batch_max_group = 100000;
+  long long Batch::batch_max_node_byte = (S)3e9;
+  long long Batch::batch_max_node = Batch::batch_max_node_byte / (_s);
+
+
 
 public:
 
@@ -768,11 +795,11 @@ public:
     
     
     T *vecArray_dev, *vecArray_host, *iter;
-    cudaMalloc(&vecArray_dev, batch_max_node * sizeof(T) * _f);
-    vecArray_host = new T[batch_max_node * _f];
+    cudaMalloc(&vecArray_dev, Batch::batch_max_node * sizeof(T) * _f);
+    vecArray_host = new T[Batch::batch_max_node * _f];
     
     int *sides_dev;
-    cudaMalloc(&sides_dev, batch_max_node * sizeof(int));
+    cudaMalloc(&sides_dev, Batch::batch_max_node * sizeof(int));
 
 
     for (int attempt = 0; attempt < 3; attempt++){
@@ -788,8 +815,8 @@ public:
 
       while(1){
 
-        if(batch_start + batch_max_node - 1 < sz_group){
-          batch_sz = batch_max_node;
+        if(batch_start + Batch::batch_max_node - 1 < sz_group){
+          batch_sz = Batch::batch_max_node;
         }
         else{
           batch_sz = sz_group - batch_start;
@@ -823,7 +850,7 @@ public:
                   batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
 
         batch_start += batch_sz;
-        if(batch_sz != batch_max_node) break;
+        if(batch_sz != Batch::batch_max_node) break;
       }
 
       group_getSideCount(sides, sz_group, n_left, n_right);
@@ -929,16 +956,10 @@ public:
   S _make_tree(vector<S>& indices, Random& _random) {
 
 
-    long long batch_max_group = 100000;
-    long long batch_max_node_byte = (S)3e9;
-    long long batch_max_node = batch_max_node_byte / (_s);
-
-
     _allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
     Node* m = _get(item); 
     m->n_descendants = _n_items; 
-
 
     if (indices.size() <= (size_t)_K && 
           ((size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
@@ -958,14 +979,11 @@ public:
 
     while(!done){
 
-      Batch batch = new Batch(min(groupArray.size(), batch_max_group));
-
-      long long n_group = 0;
-      long long n_node = 0;
+      Batch batch = new Batch(min(groupArray.size(), Batch::batch_max_group), &groupArray);
 
       for(int group_i = 0; group_i < groupArray.size(); ){
                 
-        if(groupArray[group_i].sz > batch_max_node){
+        if(groupArray[group_i].sz > Batch::batch_max_node){
 
           int n_left, n_right;
           T *splitVec = new T[_f];
@@ -979,11 +997,7 @@ public:
         }
 
 
-        if((n_node + groupArray[group_i].sz <= batch_max_node) 
-                                    && (n_group + 1 <= batch_max_group)){
-
-          n_node += groupArray[group_i].sz;
-          n_group += 1;          
+        if(batch.can_push(group_i)){     
           batch.push_back(group_i);
           group_i += 1
         }
@@ -998,8 +1012,6 @@ public:
           }
 
           batch.clear();
-          n_node = 0;
-          n_group = 0;
         }
       }   
     }

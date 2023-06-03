@@ -1219,9 +1219,6 @@ __global__ void kernel_classifySideLarge(T *vecArray, int f,
 
 
 
-  // typedef Distance D;
-  // typedef typename D::template Node<S, T> Node;
-
 
 template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
 class AnnoyIndex_GPU: public AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>{
@@ -1255,25 +1252,12 @@ public:
 
 
 
-  // template<typename S>
-  // struct Group_tmplate{
-  //   Group_tmplate(S pos, S sz, S idx): pos(pos), sz(sz), idx(idx){}
-
-  //   S pos, sz;
-  //   S idx;
-  // };
-  // typedef Group_tmplate<S> Group;
-
-
-
   struct Group{
     Group(S pos, S sz, S idx): pos(pos), sz(sz), idx(idx){}
 
     S pos, sz;
     S idx;
   };
-
-
 
 
   struct BatchPack{
@@ -1352,14 +1336,9 @@ public:
   };
 
 
-
-
   AnnoyIndex_GPU(int f): AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>(f){
     // Random _random(_seed + thread_idx);
   }
-
-
-
 
   void group_getSideCount(int *sides, int sz_group, int& n_left, int& n_right){
     
@@ -1371,7 +1350,6 @@ public:
       else n_right++;
     }
   }
-
 
   void group_moveSide(vector<S>& indices, int *sides, int offset, int sz_group){
 
@@ -1393,11 +1371,6 @@ public:
   }
 
 
-
-
-
-
-  
   void find_split(vector<S>& indices, int offset, int sz, T *splitVec){
 
     vector<Node *> children;
@@ -1411,9 +1384,6 @@ public:
     D::create_split(children, _f, _s, _random, m); 
     memcpy(splitVec, m->v, sizeof(T) * _f);
   }
-
-
-
 
   void launchKernel_classifySideSmall(Batch &batch, 
                         vector<Group> &groupArray, vector<S>& indices){
@@ -1595,10 +1565,6 @@ public:
 
 
 
-
-
-
-
   void launchKernel_classifySideLarge(vector<S>& indices, vector<Group>& groupArray, 
                            int group_i, int& n_left, int& n_right, T *splitVec, int batch_max_node){
 
@@ -1711,7 +1677,6 @@ public:
     delete [] vecArray_host;
   }
 
-
   void update_groupArray(vector<S>& indices, vector<Group>& groupArray, int group_i, 
                               int n_left, int n_right, T* splitVec){
 
@@ -1770,9 +1735,6 @@ public:
   }
 
 
-
-
-
   S _make_tree(vector<S>& indices) {
 
     this->_allocate_size(_n_nodes + 1);
@@ -1808,10 +1770,15 @@ public:
       for(int group_i = 0; group_i < groupArray.size(); group_i++){
                 
         if(groupArray[group_i].sz > batch.batch_max_node){
+          
+          printf("a\n");
 
           launchKernel_classifySideLarge(indices, groupArray, group_i, n_left,
                                                      n_right, splitVec, batch.batch_max_node);
+
           update_groupArray(indices, groupArray, group_i, n_left, n_right, splitVec);
+
+          printf("b\n");
 
           done = false;
         }
@@ -1847,10 +1814,6 @@ public:
 
     return item;
   }
-
-
-  
-
 };
 
 

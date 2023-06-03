@@ -437,20 +437,19 @@ class AnnoyIndexInterface {
 
 
 
-template<typename T>
+template<typename T, typename Random>
 __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *needCompute,
                              int *szArray, T *splitVecArray, int *sides){
+    
 
-    // int gid = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    
     if(!needCompute[blockIdx.x]) return;
 
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
     int tid = threadIdx.x;
 
+    Random _random(Random::default_seed + gid);
 
     T *splitVec = splitVecArray + blockIdx.x * f;
-
 
     __shared__ T sm[f];
 
@@ -473,51 +472,51 @@ __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *n
     int sz = szArray[blockIdx.x];
 
     idx = tid;
-    T dot = 0.;
     while(idx < sz){
-
+      
+      T dot = 0.;
       for(int i = 0; i < f; i++){
-
-        dot += (vecArray_local + idx)[i] * sm[i];
+        dot += (vecArray_local + idx * f)[i] * sm[i];
       }
 
-      if(dot != 0){
-        sides_local[idx] = dot > 0;
-      }
-      else{
-        sides_local[idx] = kiss_random_flip();
-      }
+      if(dot != 0) sides_local[idx] = (int)(dot > 0);
+      else sides_local[idx] = _random.flip();
       
       idx += blockDim.x;
     }
 
 }
 
-__device__ int kiss_random_flip()
-{
-
-    // Linear congruence generator
-    x = 69069 * x + 12345;
-
-    // Xor shift
-    y ^= y << 13;
-    y ^= y >> 17;
-    y ^= y << 5;
-
-    // Multiply-with-carry
-    uint64_t t = 698769069ULL * z + c;
-    c = t >> 32;
-    z = (uint32_t) t;
-
-    return (x + y + z) & 1;
-}
 
 
-__global__ void kernel_classifySideLarge(){
+template<typename T, typename Random>
+__global__ void kernel_classifySideLarge(T *vecArray, int f,
+                                 int batch_sz, T *splitVec, int *sides){
 
     int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    int tid = threadIdx.x;
     
-    
+    Random _random(Random::default_seed + gid);
+
+    __shared__ T sm[f];
+
+    int idx = tid;
+    while(idx < f){
+      sm[idx] = splitVec[idx];
+      idx += blockDim.x;
+    }
+
+    if(gid > batch_sz) return;
+    __syncthreads();    
+
+
+    T dot = 0.;
+    for(int i = 0; i < f; i++){
+      dot += (vecArray + gid * f)[i] * sm[i];
+    }
+
+    if(dot != 0) sides[gid] = (int)(dot > 0);
+    else sides[gid] = _random.flip();
 }
 
 
@@ -712,7 +711,8 @@ public:
     sides_host = new int[batch_sz];
 
     // -------------------------------------
-    
+
+
     int *szArray_dev, *szArray_host;
     cudaMalloc(&szArray_dev, batch.size() * sizeof(int));
     szArray_host = new int[batch.size()];
@@ -724,7 +724,9 @@ public:
     cudaMemcpy((BYTE *)szArray_dev, (BYTE *)szArray_host, 
                     batch.size() * sizeof(int), cudaMemcpyHostToDevice);
 
+
     // -------------------------------------
+
 
     int *needCompute_dev, *needCompute_host;
     cudaMalloc(&needCompute_dev, batch.size() * sizeof(int));
@@ -734,7 +736,6 @@ public:
 
     T *splitVecArray_dev, *splitVecArray_host;
     cudaMalloc(&splitVecArray_dev, batch.size() * _f * sizeof(T));
-    // splitVecArray_host =  new T[batch.size() * _f];
     splitVecArray_host = batch.splitVecArray;
     
     // -------------------------------------
@@ -772,7 +773,7 @@ public:
 
       int n_blocks = batch.size(), n_threads_per_block = 128;
 
-      kernel_classifySideSmall<T><<<n_blocks, n_threads_per_block>>>(batch.size(), _f, vecArray_dev,
+      kernel_classifySideSmall<T, Random><<<n_blocks, n_threads_per_block>>>(batch.size(), _f, vecArray_dev,
                      needCompute_dev, szArray_dev, splitVecArray_dev, sides_dev); 
 
       cudaDeviceSynchronize();
@@ -835,6 +836,18 @@ public:
         }
       }
     }
+
+
+    cudaFree(vecArray_dev);
+    cudaFree(sides_dev);
+    cudaFree(szArray_dev);
+    cudaFree(needCompute_dev);
+    cudaFree(splitVecArray_dev);
+
+    delete [] vecArray_host;
+    delete [] sides_host;
+    delete [] szArray_host;
+    delete [] needCompute_host;
   }
 
 
@@ -865,7 +878,6 @@ public:
     
     int *sides_dev;
     cudaMalloc(&sides_dev, Batch::batch_max_node * sizeof(int));
-
 
     for (int attempt = 0; attempt < 3; attempt++){
 
@@ -902,10 +914,11 @@ public:
 
         // -------------------------------------
 
-        int n_blocks = 32, n_threads_per_block = 128;
+        int n_blocks = batch_sz / n_threads_per_block, n_threads_per_block = 128;
+        if(n_blocks * n_threads_per_block != batch_sz) n_blocks++;
         
-        kernel_classifySideLarge<T><<<n_blocks, n_threads_per_block>>>(vecArray_dev,
-                      batch_sz, splitVec_dev, sides_dev); 
+        kernel_classifySideLarge<T, Random><<<n_blocks, n_threads_per_block>>>(vecArray_dev, _f, 
+                                 batch_sz, splitVec_dev, sides_dev); 
 
         cudaDeviceSynchronize();
 
@@ -951,9 +964,8 @@ public:
     cudaFree(vecArray_dev);
     cudaFree(sides_dev);
     
-    delete sides;
-    // delete splitNode_host;
-    // delete vecArray_host;
+    delete [] sides;
+    delete [] vecArray_host;
   }
 
   

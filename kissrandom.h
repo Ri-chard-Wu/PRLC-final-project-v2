@@ -28,6 +28,7 @@ struct Kiss32Random {
 #endif
 
   // seed must be != 0
+  __device__ __host__ 
   Kiss32Random(uint32_t seed = default_seed) {
     x = seed;
     y = 362436000;
@@ -35,6 +36,8 @@ struct Kiss32Random {
     c = 7654321;
   }
 
+
+  __device__ __host__ 
   uint32_t kiss() {
     // Linear congruence generator
     x = 69069 * x + 12345;
@@ -51,14 +54,21 @@ struct Kiss32Random {
 
     return x + y + z;
   }
+
+
+  __device__ __host__ 
   inline int flip() {
     // Draw random 0 or 1
     return kiss() & 1;
   }
+
+  __device__ __host__ 
   inline size_t index(size_t n) {
     // Draw random integer between 0 and n-1 where n is at most the number of data points you have
     return kiss() % n;
   }
+
+  __device__ __host__ 
   inline void set_seed(uint32_t seed) {
     x = seed;
   }

@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
 	int f, n;
 
 	f = 40;
-	n = 100000;
+	n = 1000;
 
 	// f = 756;
 	// n = 20000;

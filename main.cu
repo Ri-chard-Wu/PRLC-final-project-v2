@@ -13,7 +13,29 @@
 #include <stdexcept>           
 #include <string>           
 
-#include <main.cuh>
+typedef unsigned char BYTE;
+
+__global__ void kernel1(float *arr, long long N, int n_total_threads){
+
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+
+
+    // if(threadIdx.x != 0) return;
+    
+    for(long long i = 0; i < N; i += n_total_threads){
+        arr[gid + i] = (gid + i) * 0.00001;
+    }
+}
+
+
+void kernel1_cpu(long long N){
+    float sum = 0.0;
+    for(long long i = 0; i < N; i++){
+        sum += i * 0.00001;
+    }    
+
+    printf("cpu: %f\n", sum);
+}
 
 
 
@@ -43,12 +65,10 @@ int main(int argc, char **argv)
     printf("gpu: %f\n", sum);
     cudaFree(arr);
     
-
+    kernel1_cpu(N);
 
     
 
     return 0;
 }
-
-
 

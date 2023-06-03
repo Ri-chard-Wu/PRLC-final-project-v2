@@ -437,15 +437,80 @@ class AnnoyIndexInterface {
 
 
 
+template<typename T>
+__global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *needCompute,
+                             int *szArray, T *splitVecArray, int *sides){
 
-__global__ void kernel_classifySideSmall(){
-
-    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    // int gid = blockIdx.x * blockDim.x + threadIdx.x;
     
     
+    if(!needCompute[blockIdx.x]) return;
+
+    int tid = threadIdx.x;
+
+
+    T *splitVec = splitVecArray + blockIdx.x * f;
+
+
+    __shared__ T sm[f];
+
+    int idx = tid;
+    while(idx < f){
+      sm[idx] = splitVec[idx];
+      idx += blockDim.x;
+    }
+
+    __syncthreads();
+
+    int offset = 0;
+
+    for(int i = 0; i < blockIdx.x; i++){
+      offset += szArray[i];
+    }
+
+    T *vecArray_local = vecArray + offset * f;
+    int *sides_local = sides + offset * f;
+    int sz = szArray[blockIdx.x];
+
+    idx = tid;
+    T dot = 0.;
+    while(idx < sz){
+
+      for(int i = 0; i < f; i++){
+
+        dot += (vecArray_local + idx)[i] * sm[i];
+      }
+
+      if(dot != 0){
+        sides_local[idx] = dot > 0;
+      }
+      else{
+        sides_local[idx] = kiss_random_flip();
+      }
+      
+      idx += blockDim.x;
+    }
+
 }
 
+__device__ int kiss_random_flip()
+{
 
+    // Linear congruence generator
+    x = 69069 * x + 12345;
+
+    // Xor shift
+    y ^= y << 13;
+    y ^= y >> 17;
+    y ^= y << 5;
+
+    // Multiply-with-carry
+    uint64_t t = 698769069ULL * z + c;
+    c = t >> 32;
+    z = (uint32_t) t;
+
+    return (x + y + z) & 1;
+}
 
 
 __global__ void kernel_classifySideLarge(){
@@ -705,9 +770,9 @@ public:
 
       // -------------------------------------
 
-      int n_blocks = 32, n_threads_per_block = 128;
+      int n_blocks = batch.size(), n_threads_per_block = 128;
 
-      kernel_classifySideSmall<n_blocks, n_threads_per_block>(vecArray_dev,
+      kernel_classifySideSmall<T><<<n_blocks, n_threads_per_block>>>(batch.size(), _f, vecArray_dev,
                      needCompute_dev, szArray_dev, splitVecArray_dev, sides_dev); 
 
       cudaDeviceSynchronize();
@@ -839,7 +904,7 @@ public:
 
         int n_blocks = 32, n_threads_per_block = 128;
         
-        kernel_classifySideLarge<n_blocks, n_threads_per_block>(vecArray_dev,
+        kernel_classifySideLarge<T><<<n_blocks, n_threads_per_block>>>(vecArray_dev,
                       batch_sz, splitVec_dev, sides_dev); 
 
         cudaDeviceSynchronize();
@@ -998,8 +1063,8 @@ public:
 
 
     // handle smaller groups.
-   
-    Batch batch = new Batch(min(groupArray.size(), Batch::batch_max_group), &groupArray);
+    
+    Batch batch = new Batch(Batch::batch_max_group, &groupArray);
 
     while(groupArray.size() > 0){
 
@@ -1010,6 +1075,7 @@ public:
       }   
 
       launchKernel_classifySideSmall(batch, groupArray, indices);
+
       for(int i = 0; i < batch.size(); i++){
         update_groupArray(indices, groupArray, batch[i].group, batch[i].n_left,
                                       batch[i].n_right, batch.get_splitVec(i));

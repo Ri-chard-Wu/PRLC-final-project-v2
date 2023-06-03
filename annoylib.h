@@ -473,13 +473,49 @@ protected:
     int cid;
   };
 
-  struct BatchItem{
-    BatchItem(int group): group(group), is_balanced(false) {}
+
+  struct BatchPack{
+    
+    BatchItem(int group): group(group), is_balanced(false) {
+    }
+  
     int group;
     int n_left, n_right;
     bool is_balanced;
   };
 
+
+  struct Batch{
+
+    Batch(int n_group): n(0){
+      splitVecArray = new T[_f * n_group];
+      bpArray = new BatchPack[n_group];
+    }
+
+    ~Batch(int n_group){
+      delete [] splitVecArray;
+      delete [] bpArray;
+    }
+
+    BatchPack& operator[](int group)
+    {
+        return bpArray[group];
+    }
+
+    void push_back(int group){
+
+      bpArray[n++].group = group;
+    }
+
+    int size(){
+      return n;
+    }
+
+    BatchPack *bpArray;
+    T *splitVecArray;
+    int n;
+
+  }
 
 public:
 
@@ -544,7 +580,7 @@ public:
 
 
 
-  S launchKernel_classifySideSmall(vector<BatchItem> &batch, 
+  S launchKernel_classifySideSmall(Batch &batch, 
                         vector<Group> &groupArray, vector<S>& indices){
     
     int batch_sz = 0;
@@ -605,7 +641,8 @@ public:
 
     T *splitVecArray_dev, *splitVecArray_host;
     cudaMalloc(&splitVecArray_dev, batch.size() * _f * sizeof(T));
-    splitVecArray_host =  new T[batch.size() * _f];
+    // splitVecArray_host =  new T[batch.size() * _f];
+    splitVecArray_host = batch.splitVecArray;
     
     // -------------------------------------
 
@@ -620,7 +657,7 @@ public:
         int offset = groupArray[batch[i].group].pos;
         int sz = batch[i].sz;
 
-        find_split(indices, offset, sz, splitVecArray_host + i);
+        find_split(indices, offset, sz, splitVecArray_host + i * _f);
       }
 
 
@@ -667,6 +704,7 @@ public:
 
         if (_split_imbalance(batch[i].n_left, batch[i].n_right) < 0.95) {
           batch[i].is_balanced = true;
+          batch[i].splitVec = splitVecArray_host[i];
           balance_count++;
           group_moveSide(indices, sides_host + offset_batch, offset_indices, sz_group);          
         }
@@ -896,8 +934,10 @@ public:
 
 
 
+      Batch batch = new Batch(min(groupArray.size(), batch_max_group));
 
-      vector<BatchItem> batch;
+      // vector<BatchItem> batch;
+
       long long n_group = 0;
       long long n_node = 0;
 
@@ -912,16 +952,19 @@ public:
           continue;
         }
 
-        if((n_node + groupArray[group_i].sz <= batch_max_node) && (n_group + 1 <= batch_max_group)){
+        if((n_node + groupArray[group_i].sz <= batch_max_node) 
+                                    && (n_group + 1 <= batch_max_group)){
 
           n_node += groupArray[group_i].sz;
           n_group += 1;          
-          batch.push_back(BatchItem(group_i));
+          batch.push_back(group_i);
           group_i += 1
         }
         else{
             
+
           launchKernel_classifySideSmall(batch, groupArray, indices);
+
 
           for(int i = 0; i < batch.size(); i++){
             
@@ -961,9 +1004,10 @@ public:
     }
   }
 
-
-
 };
+
+
+
 
 
 

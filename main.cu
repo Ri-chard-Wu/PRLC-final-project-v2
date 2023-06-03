@@ -23,10 +23,17 @@ int precision(int f=40, int n=1000000){
 
 	//******************************************************
 	//Building the tree
-	AnnoyIndex<int, double, Angular, Kiss32Random, \
-		AnnoyIndexSingleThreadedBuildPolicy> t = \
-		AnnoyIndex<int, double, Angular, Kiss32Random, \
-			AnnoyIndexSingleThreadedBuildPolicy>(f);
+	// AnnoyIndex<int, double, Angular, Kiss32Random, \
+	// 	AnnoyIndexSingleThreadedBuildPolicy> t = \
+	// 	AnnoyIndex<int, double, Angular, Kiss32Random, \
+	// 		AnnoyIndexSingleThreadedBuildPolicy>(f);
+
+
+	AnnoyIndex_GPU<int, double, Angular, Kiss32Random, \
+						AnnoyIndexSingleThreadedBuildPolicy> t(f);
+
+
+
 
 	char *filename = "test_disk_build.tree";
 	t.on_disk_build(filename);

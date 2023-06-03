@@ -1,0 +1,182 @@
+annoylib.h(1253): warning: declaration of "S" hides template parameter
+
+main.cu(38): warning: conversion from a string literal to "char *" is deprecated
+
+main.cu(126): warning: integer conversion resulted in truncation
+
+annoylib.h(855): warning: variable "old" was declared but never referenced
+          detected during:
+            instantiation of "void Annoy::AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_allocate_size(S) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(517): here
+            instantiation of "__nv_bool Annoy::AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::add_item_impl(S, const W &, char **) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy, W=const double *]" 
+(505): here
+            instantiation of "__nv_bool Annoy::AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::add_item(S, const T *, char **) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+main.cu(60): here
+
+annoylib.h(1780): warning: variable "batch" is used before its value is set
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1602): error: identifier "batch" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1615): error: identifier "BYTE" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1615): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1615): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1615): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1638): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1638): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1638): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1643): error: identifier "n_threads_per_block" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1653): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1653): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1653): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1653): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1662): error: identifier "_split_imbalance" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1670): error: identifier "_split_imbalance" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1715): error: identifier "_get" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1430): error: identifier "BYTE" is undefined
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1430): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1430): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1430): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1437): error: a value of type "int *" cannot be assigned to an entity of type "int"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1450): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1450): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1450): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1484): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1484): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1484): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1495): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1495): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1495): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1509): error: expected an expression
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1509): error: expected a ")"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1509): error: too few arguments in function call
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1532): error: expected a ";"
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1532): warning: variable "offset_batch" was declared but never referenced
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1557): error: expression must have pointer-to-object type
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1561): warning: reference is to variable "i"
+(1541): here -- under old for-init scoping rules it would have been variable "i"
+(1556): here
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1561): warning: reference is to variable "i"
+(1541): here -- under old for-init scoping rules it would have been variable "i"
+(1556): here
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1574): error: expression must be a pointer to a complete object type
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1478): error: class "Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::BatchPack [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" has no member "sz"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1522): error: argument of type "int" is incompatible with parameter of type "int *"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1529): error: argument of type "int" is incompatible with parameter of type "int *"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1551): error: class "Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" has no member "splitVecArrar"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1560): error: argument of type "int" is incompatible with parameter of type "int *"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1561): error: argument of type "int" is incompatible with parameter of type "int *"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1577): warning: missing return statement at end of non-void function "Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]"
+          detected during:
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::launchKernel_classifySideSmall(Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Batch &, std::vector<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group, std::allocator<Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>> &, std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+(1815): here
+            instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<S, std::allocator<S>> &) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+42 errors detected in the compilation of "/tmp/tmpxft_00000c6e_00000000-8_main.cpp1.ii".

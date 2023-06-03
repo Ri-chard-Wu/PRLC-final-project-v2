@@ -464,13 +464,10 @@ class AnnoyIndex_GPU: private AnnoyIndex<S, T, Distance, Random, ThreadedBuildPo
 protected:
 
   struct Group{
-    Group(S pos, S sz, S parent_idx, int cid, S idx): pos(pos), sz(sz), 
-                    parent_idx(parent_idx), idx(idx), cid(cid), can_split(true){}
+    Group(S pos, S sz, S idx): pos(pos), sz(sz), idx(idx){}
 
     S pos, sz;
-    bool can_split;
-    S parent_idx, idx;
-    int cid;
+    S idx;
   };
 
 
@@ -509,6 +506,10 @@ protected:
 
     int size(){
       return n;
+    }
+
+    T * get_splitVec(int idx){
+      return splitVecArray + idx * _f;
     }
 
     BatchPack *bpArray;
@@ -704,7 +705,7 @@ public:
 
         if (_split_imbalance(batch[i].n_left, batch[i].n_right) < 0.95) {
           batch[i].is_balanced = true;
-          batch[i].splitVec = splitVecArray_host[i];
+          // batch[i].splitVec = splitVecArray_host[i];
           balance_count++;
           group_moveSide(indices, sides_host + offset_batch, offset_indices, sz_group);          
         }
@@ -724,21 +725,24 @@ public:
     
       int offset_indices = groupArray[batch[i].group].pos;
       int sz_group = groupArray[batch[i].group].sz;
-        
-      while (_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99) {
+      
+      if(_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99){
 
-        for(int i = 0; i < sz_group; i++){
-          sides_host[i] = _random.flip();
+        for (int z = 0; z < _f; z++)
+          batch.splitVecArrar[i * _f + z] = 0;    
+            
+
+        while (_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99) {
+
+          for(int i = 0; i < sz_group; i++){
+            sides_host[i] = _random.flip();
+          }
+
+          group_moveSide(indices, sides_host, offset_indices, sz_group);
+          group_getSideCount(sides_host, sz_group, batch[i].n_left, batch[i].n_right);
         }
-
-        group_moveSide(indices, sides_host, offset_indices, sz_group);
-        group_getSideCount(sides_host, sz_group, batch[i].n_left, batch[i].n_right);
       }
-
     }
-
-
-
   }
 
 
@@ -747,20 +751,20 @@ public:
 
 
 
-  void launchKernel_classifySideLarge(vector<S>& indices, 
-                          vector<Group>& groupArray, int group_i){
+  void launchKernel_classifySideLarge(vector<S>& indices, vector<Group>& groupArray, 
+                           int group_i, int& n_left, int& n_right, T *splitVec){
 
     int offset = groupArray[group_i].pos;
     int sz_group = groupArray[group_i].sz;
     
     int *sides = new int[sz_group];
-    int n_right, n_left;
+    // int n_right, n_left;
 
 
 
     T *splitVec_dev, *splitVec_host;
     cudaMalloc(&splitVec_dev, sizeof(T) * _f);
-    splitVec_host = new T[_f];
+    splitVec_host = splitVec;
     
     
     T *vecArray_dev, *vecArray_host, *iter;
@@ -832,15 +836,23 @@ public:
 
 
     // If we didn't find a hyperplane, just randomize sides as a last option
-    while (_split_imbalance(n_left, n_right) > 0.99) {
+    if(_split_imbalance(n_left, n_right) > 0.99){
 
-      for(int i = 0; i < sz_group; i++){
-        sides[i] = _random.flip();
+      for (int z = 0; z < _f; z++)
+        splitVec_host[z] = 0;
+
+      while (_split_imbalance(n_left, n_right) > 0.99) {
+
+        for(int i = 0; i < sz_group; i++){
+          sides[i] = _random.flip();
+        }
+
+        group_moveSide(indices, sides, offset, sz_group);
+        group_getSideCount(sides, sz_group, n_left, n_right);
       }
-
-      group_moveSide(indices, sides, offset, sz_group);
-      group_getSideCount(sides, sz_group, n_left, n_right);
+      
     }
+
 
 
     cudaFree(splitVec_dev);
@@ -853,9 +865,69 @@ public:
   }
 
   
+  void update_groupArray(vector<S>& indices, vector<Group>& groupArray, int group_i, 
+                              int n_left, int n_right, T* splitVec){
+
+    // for each internal node, the attributes need to be set:
+    // - v: get from D::create_split().
+    // - n_descendants
+    // - children
+
+    int pos[2], n[2];
+
+    n[0] = n_left;
+    n[1] = n_right;
+
+    pos[0] = groupArray[group_i].pos;
+    pos[1] = pos[0] + n[0];
+    
+    int parent_idx = groupArray[group_i].idx;
+    Node* p = _get(parent_idx);
+    groupArray.erase(groupArray.begin() + group_i);
+
+    for(int i = 0; i < 2; i++){
+
+      // Don't need to create group.
+      if (n[i] == 1){
+        p->children[i] = indices[pos[i]];
+        continue;
+      }
+
+      // a leaf - Don't need to create group.
+      if (n[i] <= (size_t)_K) {
+        
+        _allocate_size(_n_nodes + 1);
+        S item = _n_nodes++;
+        Node* m = _get(item);
+
+        m->n_descendants = (S)n[i];
+
+        if (n[i] > 0){
+          memcpy(m->children, &indices[pos[i]], n[i] * sizeof(S));
+        }
+
+        p->children[i] = item;
+        continue;
+      }
+
+      // Need to create group.
+      _allocate_size(_n_nodes + 1);
+      S item = _n_nodes++;
+      _get(item)->n_descendants = n[i]; // n_descendants
+      p->children[i] = item; // children
+
+      groupArray.push_back(Group(pos[i], n[i], item));
+    }
+
+    memcpy(p->v, splitVec, _f * sizeof(T)); // v          
+  }
+
+
+
 
 
   S _make_tree(vector<S>& indices, Random& _random) {
+
 
     long long batch_max_group = 100000;
     long long batch_max_node_byte = (S)3e9;
@@ -863,94 +935,49 @@ public:
 
 
     _allocate_size(_n_nodes + 1);
-    vector<Group> groupArray;
     S item = _n_nodes++;
     Node* m = _get(item); 
     m->n_descendants = _n_items; 
-    groupArray.push_back(Group(0, indices.size(), -1, -1, item));
+
+
+    if (indices.size() <= (size_t)_K && 
+          ((size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
+      
+      if (!indices.empty()){
+        memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+      }
+      return item;
+    }
+
+
+    vector<Group> groupArray;
+    groupArray.push_back(Group(0, indices.size(), item));
 
 
     bool done = false;
 
     while(!done){
 
-      bool is_root = (groupArray.size() == 1);
-
-
-      // check set can_split.
-      for(int i = 0; i < groupArray.size(); i++){
-        
-        if(!groupArray[i].can_split) continue;
-
-        S pos = groupArray[i].pos;
-        S sz = groupArray[i].sz;
-        S parent_idx = groupArray[i].parent_idx;
-        int cid = groupArray[i].cid;
-        
-
-        // if (indices.size() == 1 && !is_root)
-        //   return indices[0];
-
-        if (sz == 1 && !is_root){
-
-          Node* p = _get(parent_idx);
-          p->children[cid] = indices[pos];
-
-          groupArray[i].can_split = false;
-
-          continue;
-        }
-          
-
-
-        // a leaf node.
-        if (sz <= (size_t)_K && \
-                (!is_root || (size_t)_n_items <= (size_t)_K || sz == 1)) {
-      
-
-          _allocate_size(_n_nodes + 1);
-          S item = _n_nodes++;
-          Node* m = _get(item);
-
-
-          m->n_descendants = is_root ? _n_items : sz;
-
-
-          // if (!indices.empty())
-          //   memcpy(m->children, &indices[0], indices.size() * sizeof(S));
-
-          if (sz != 0){
-            memcpy(m->children, &indices[pos], sz * sizeof(S));
-          }   
-
-          Node* p = _get(parent_idx);
-          p->children[cid] = item;
-
-          groupArray[i].can_split = false;
-
-          continue;
-        }
-      }
-
-
-
       Batch batch = new Batch(min(groupArray.size(), batch_max_group));
-
-      // vector<BatchItem> batch;
 
       long long n_group = 0;
       long long n_node = 0;
 
-
       for(int group_i = 0; group_i < groupArray.size(); ){
-        
-        if(!groupArray[group_i].can_split) continue;
-        
+                
         if(groupArray[group_i].sz > batch_max_node){
-          launchKernel_classifySideLarge(indices, groupArray, group_i);
+
+          int n_left, n_right;
+          T *splitVec = new T[_f];
+          
+          launchKernel_classifySideLarge(indices, groupArray, group_i, n_left, n_right, splitVec);
+
+          update_groupArray(indices, groupArray, group_i, n_left, n_right, splitVec);
+
           group_i++;
           continue;
         }
+
 
         if((n_node + groupArray[group_i].sz <= batch_max_node) 
                                     && (n_group + 1 <= batch_max_group)){
@@ -962,39 +989,13 @@ public:
         }
         else{
             
-
           launchKernel_classifySideSmall(batch, groupArray, indices);
-
 
           for(int i = 0; i < batch.size(); i++){
             
-            // for each internal node, the attributes need to be set:
-            // - v: get from D::create_split().
-            // - n_descendants
-            // - children
-
-            int pos[2], idx[2], n[2];
-
-            pos[0] = groupArray[batch[i].group].pos;
-            pos[1] = pos_left + batch[i].n_left;
-          
-            _allocate_size(_n_nodes + 2);
-            idx[0] = _n_nodes++;
-            idx[1] = _n_nodes++;
-
-            n[0] = batch[i].n_left;
-            n[1] = batch[i].n_right;
-
-            int parent_idx = groupArray[batch[i].group].idx;
-            Node* p = _get(parent_idx);
-           
-            for(int i = 0; i < 2; i++){
-              _get(idx[i])->n_descendants = n[i];
-              groupArray.push_back(Group(pos[i], n[i],  parent_idx, i, idx[i]));
-              p->children[i] = idx[i];
-            }
+            update_groupArray(indices, groupArray, batch[i].group, batch[i].n_left,
+                                         batch[i].n_right, batch.get_splitVec(i));
           }
-
 
           batch.clear();
           n_node = 0;

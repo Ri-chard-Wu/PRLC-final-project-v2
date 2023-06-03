@@ -680,7 +680,6 @@ public:
       batch_sz += groupArray[batch[i].group].sz;
     }   
 
-
     // -------------------------------------
 
     T *vecArray_dev, *vecArray_host, *iter;
@@ -1096,6 +1095,9 @@ public:
       batch.clear();
     }
   }
+
+
+  return item;
 
 };
 

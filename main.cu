@@ -70,7 +70,7 @@ int precision(int f=40, int n=1000000){
 
 
 	std::cout << std::endl;
-	std::cout << "Building index num_trees = 2 * num_features ...";
+	std::cout << "Building index num_trees = 2 * num_features ...\n\n\n";
 
 	t_start = std::chrono::high_resolution_clock::now();
 	t.build(80);

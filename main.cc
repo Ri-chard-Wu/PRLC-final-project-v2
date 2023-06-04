@@ -2,8 +2,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
-#include "kissrandom.h"
-#include "annoylib.h"
+#include "kissrandom_cpu.h"
+#include "annoylib_cpu.h"
 #include <chrono>
 #include <algorithm>
 #include <map>
@@ -16,7 +16,7 @@ using namespace Annoy;
 // build()
 // get_nns_by_item()
 
-int precision(int f=40, int n=1000000){
+int precision(int f=40, int n=1000000, int n_trees=80){
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
 
@@ -30,10 +30,10 @@ int precision(int f=40, int n=1000000){
 		AnnoyIndex<int, double, Angular, Kiss32Random, \
 			AnnoyIndexSingleThreadedBuildPolicy>(f);
 
-	char *filename = "test_disk_build.tree";
+	char *filename = "test_disk_build-cpu.tree";
 	t.on_disk_build(filename);
 
-	std::cout << "Building index ..." << std::endl;
+	// std::cout << "Building index ..." << std::endl;
 
 
 	
@@ -54,28 +54,28 @@ int precision(int f=40, int n=1000000){
 
 		t.add_item(i, vec);
 
-		std::cout << "Loading objects ...\t object: "
-				  << i+1 
-				  << "\tProgress:"
-				  << std::fixed 
-				  << std::setprecision(2) 
-				  << (double) i / (double)(n + 1) * 100 
-				  << "%\r";
+		// std::cout << "Loading objects ...\t object: "
+		// 		  << i+1 
+		// 		  << "\tProgress:"
+		// 		  << std::fixed 
+		// 		  << std::setprecision(2) 
+		// 		  << (double) i / (double)(n + 1) * 100 
+		// 		  << "%\r";
 	}
 
 
 	std::cout << std::endl;
-	std::cout << "Building index num_trees = 2 * num_features ...";
+	// std::cout << "Building index num_trees = 2 * num_features ...";
 
 	t_start = std::chrono::high_resolution_clock::now();
-	t.build(80);
+	t.build(n_trees);
 	t_end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::seconds>( t_end - t_start ).count();
 	std::cout << " Done in "<< duration << " secs." << std::endl;
 
-	std::cout << "Saving index ...";
+	// std::cout << "Saving index ...";
 	// t.save("precision.tree");
-	std::cout << " Done" << std::endl;
+	// std::cout << " Done" << std::endl;
 
 
 	//******************************************************
@@ -103,7 +103,7 @@ int precision(int f=40, int n=1000000){
 		// select a random node
 		int j = rand() % n;
 
-		std::cout << "finding nbs for " << j << std::endl;
+		// std::cout << "finding nbs for " << j << std::endl;
 
 		// getting the K closest
 		// search all n nodes, very slow but most accurate achievable.
@@ -145,12 +145,19 @@ int precision(int f=40, int n=1000000){
 			vector<int>().swap(toplist);
 		}
 
-		for(std::vector<int>::iterator limit = limits.begin(); limit!=limits.end(); ++limit){
-			std::cout << "limit: " << (*limit) << "\tprecision: "<< std::fixed << std::setprecision(2) << (100.0 * prec_sum[(*limit)] / (i + 1)) << "% \tavg. time: "<< std::fixed<< std::setprecision(6) << (time_sum[(*limit)] / (i + 1)) * 1e-04 << "s" << std::endl;
-		}
+		// for(std::vector<int>::iterator limit = limits.begin(); limit!=limits.end(); ++limit){
+		// 	std::cout << "limit: " << (*limit) << "\tprecision: "<< std::fixed << std::setprecision(2) << (100.0 * prec_sum[(*limit)] / (i + 1)) << "% \tavg. time: "<< std::fixed<< std::setprecision(6) << (time_sum[(*limit)] / (i + 1)) * 1e-04 << "s" << std::endl;
+		// }
 
 		closest.clear(); 
 		vector<int>().swap(closest);
+	}
+
+	for(std::vector<int>::iterator limit = limits.begin(); limit!=limits.end(); ++limit){
+		std::cout << "limit: " << (*limit) << "\tprecision: "<< std::fixed 
+			<< std::setprecision(2) << (100.0 * prec_sum[(*limit)] / prec_n)
+					<< "% \tavg. time: "<< std::fixed<< std::setprecision(6) 
+					<< (time_sum[(*limit)] / prec_n) * 1e-04 << "s" << std::endl;
 	}
 
 	std::cout << "\nDone" << std::endl;
@@ -168,10 +175,12 @@ int main(int argc, char **argv) {
 
 // #endif
 
-	int f, n;
+	int f, n, n_trees;
 
-	f = 40;
+	f = 786;
 	n = 100000;
+	n_trees = 2;
+
 
 	// f = 756;
 	// n = 20000;
@@ -179,7 +188,7 @@ int main(int argc, char **argv) {
 	// f = 128;
 	// n = 10000;
 
-	precision(f, n);
+	precision(f, n, n_trees);
 
 	return EXIT_SUCCESS;
 }

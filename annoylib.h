@@ -797,7 +797,7 @@ public:
 
 
     // int tree_id = 0;
-
+    int tree_count = 0;
     while (1) {
 
       if (q == -1) {
@@ -831,17 +831,13 @@ public:
       }
 
 
-      // printf("[%d] indices.size(): %d, items: ", tree_id++, indices.size());
-      // for(int i = 0;i<10;i++){
-      //   printf("%d, ", indices[i]);
-      // }
-      // printf("\n");
-
-
+ 
       threaded_build_policy.unlock_shared_nodes();
 
 
       thread_roots.push_back(_make_tree(indices));
+      tree_count++;
+      printf("n trees built: %d / %d\n", tree_count + 1, q);
     }
 
 
@@ -1134,21 +1130,76 @@ typedef unsigned char BYTE;
 typedef unsigned int WORD;
 
 
+// template<typename T, typename Random>
+// __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *needCompute,
+//                              int *szArray, T *splitVecArray, int *sides){
+    
+
+//     if(!needCompute[blockIdx.x]) return;
+
+//     int gid = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+//     int tid = threadIdx.x;
+
+//     Random _random(Random::default_seed + gid);
+
+//     T *splitVec = splitVecArray + blockIdx.x * f;
+
+//     // __shared__ T sm[f];
+//     extern __shared__ T sm[];
+
+//     int idx = tid;
+//     while(idx < f){
+//       sm[idx] = splitVec[idx];
+//       idx += blockDim.x;
+//     }
+
+//     __syncthreads();
+
+//     int offset = 0;
+
+//     for(int i = 0; i < blockIdx.x; i++){
+//       offset += szArray[i];
+//     }
+
+//     T *vecArray_local = vecArray + offset * f;
+//     int *sides_local = sides + offset;
+//     int sz = szArray[blockIdx.x];
+
+//     idx = blockIdx.y * blockDim.x  + tid;
+//     while(idx < sz){
+      
+//       T dot = 0.;
+//       for(int i = 0; i < f; i++){
+//         dot += (vecArray_local + idx * f)[i] * sm[i];
+//       }
+
+//       if(dot != 0) sides_local[idx] = (int)(dot > 0);
+//       else sides_local[idx] = _random.flip();
+      
+//       idx += gridDim.y * blockDim.x;
+//     }
+
+// }
+
+
+
+
+
+
 template<typename T, typename Random>
 __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *needCompute,
-                             int *szArray, T *splitVecArray, int *sides){
+                             int batch_sz, int *szArray, T *splitVecArray, int *sides){
     
 
     if(!needCompute[blockIdx.x]) return;
 
-    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    int gid = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
     int tid = threadIdx.x;
 
     Random _random(Random::default_seed + gid);
 
     T *splitVec = splitVecArray + blockIdx.x * f;
 
-    // __shared__ T sm[f];
     extern __shared__ T sm[];
 
     int idx = tid;
@@ -1165,25 +1216,28 @@ __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *n
       offset += szArray[i];
     }
 
-    T *vecArray_local = vecArray + offset * f;
-    int *sides_local = sides + offset * f;
+    // T *vecArray_local = vecArray + offset * f;
+    int *sides_local = sides + offset;
     int sz = szArray[blockIdx.x];
 
-    idx = tid;
+    idx = blockIdx.y * blockDim.x  + tid;
     while(idx < sz){
       
       T dot = 0.;
       for(int i = 0; i < f; i++){
-        dot += (vecArray_local + idx * f)[i] * sm[i];
+        // dot += (vecArray_local + idx * f)[i] * sm[i];
+        dot += (*(vecArray + i * batch_sz + offset + idx)) * sm[i];
+        
       }
 
       if(dot != 0) sides_local[idx] = (int)(dot > 0);
       else sides_local[idx] = _random.flip();
       
-      idx += blockDim.x;
+      idx += gridDim.y * blockDim.x;
     }
 
 }
+
 
 
 
@@ -1290,6 +1344,7 @@ public:
       batch_max_group = 100000;
       batch_max_node_byte = (long long)3e9;
       batch_max_node = batch_max_node_byte / (_s); 
+      // batch_max_node = 1000; 
 
       splitVecArray = new T[_f * batch_max_group];
       bpArray = new BatchPack[batch_max_group];
@@ -1416,23 +1471,45 @@ public:
 
   void launchKernel_classifySideSmall(Batch &batch, vector<S>& indices){
     
+    printf("batch group sizes: ");
     int batch_sz = 0;
     for(int i = 0; i < batch.size(); i++){
       batch_sz += batch[i].group->sz;
+      printf("%d, ", batch[i].group->sz);
     }   
 
+    printf("; batch_sz: %d\n", batch_sz);
+
     // -------------------------------------
+
+    // T *vecArray_dev, *vecArray_host, *iter;
+    // cudaMalloc(&vecArray_dev, batch_sz * _f * sizeof(T));
+    // vecArray_host = new T[batch_sz * _f];
+    // iter = vecArray_host;
+
+    // for(int i = 0; i < batch.size(); i++){
+    
+    //   int offset = batch[i].group->pos;
+    //   int sz = batch[i].group->sz;
+
+    //   for(int idx = 0; idx < sz; idx++){
+
+    //     Node *node = this->_get(indices[offset + idx]);
+        
+    //     memcpy(iter, node->v, (_f) * sizeof(T));
+
+    //     iter += _f;
+    //   }
+    // }
+
 
     T *vecArray_dev, *vecArray_host, *iter;
     cudaMalloc(&vecArray_dev, batch_sz * _f * sizeof(T));
     vecArray_host = new T[batch_sz * _f];
-    iter = vecArray_host;
-
-    
+    int offset_batch = 0;
 
     for(int i = 0; i < batch.size(); i++){
-      
-
+    
       int offset = batch[i].group->pos;
       int sz = batch[i].group->sz;
 
@@ -1440,14 +1517,14 @@ public:
 
         Node *node = this->_get(indices[offset + idx]);
         
-        memcpy(iter, node->v, (_f) * sizeof(T));
-
-        iter += _f;
-
+        // memcpy(iter, node->v, (_f) * sizeof(T));
+        for(int z = 0; z < _f; z++){
+          vecArray_host[z * batch_sz + offset_batch + idx] = node->v[z];
+        }
       }
 
+      offset_batch += sz;
     }
-
 
     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
                     batch_sz * _f * sizeof(T), cudaMemcpyHostToDevice);
@@ -1490,11 +1567,10 @@ public:
     
     // -------------------------------------
 
+    int attempt;
+    for (attempt = 0; attempt < 3; attempt++){
 
-    for (int attempt = 0; attempt < 3; attempt++){
-
-
-
+    
       for(int i = 0; i < batch.size(); i++){
         
         if(batch[i].is_balanced) continue;
@@ -1522,10 +1598,22 @@ public:
 
       // -------------------------------------
 
-      int n_blocks = batch.size(), n_threads_per_block = 128;
 
-      kernel_classifySideSmall<T, Random><<<n_blocks, n_threads_per_block, _f * sizeof(T)>>>(batch.size(), _f, vecArray_dev,
-                     needCompute_dev, szArray_dev, splitVecArray_dev, sides_dev); 
+
+      int n_threads_per_block = 128;
+      dim3 nThreadsPerBlock(n_threads_per_block, 1, 1);
+      dim3 nBlocks(batch.size(), batch[0].group->sz / (n_threads_per_block * 16), 1);
+
+      // int n_blocks = batch.size(), n_threads_per_block = 256;
+
+      kernel_classifySideSmall<T, Random><<<nBlocks, nThreadsPerBlock, _f * sizeof(T)>>>\
+          (batch.size(), _f, vecArray_dev, needCompute_dev, batch_sz, szArray_dev,
+                   splitVecArray_dev, sides_dev); 
+
+
+
+
+
 
       cudaDeviceSynchronize();
 
@@ -1535,7 +1623,8 @@ public:
                 batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
 
 
-      int offset_batch = 0, balance_count = 0;
+      offset_batch = 0;
+      int balance_count = 0;
 
       for(int i = 0; i < batch.size(); i++){
 
@@ -1545,17 +1634,8 @@ public:
         int sz_group = batch[i].group->sz;
 
 
-        // printf("%d / %d\n", i+1, batch.size());
-        // printf("[before] sz_group: %d, n_left: %d, n_right: %d\n", 
-        //                         sz_group, batch[i].n_left, batch[i].n_right);
-
         group_getSideCount(sides_host + offset_batch, sz_group, 
                                       batch[i].n_left, batch[i].n_right);
-
-        // printf("[after] sz_group: %d, n_left: %d, n_right: %d\n", 
-        //                         sz_group, batch[i].n_left, batch[i].n_right);
-                          
-      
 
         if (this->_split_imbalance(batch[i].n_left, batch[i].n_right) < 0.95) {
           batch[i].is_balanced = true;
@@ -1571,7 +1651,10 @@ public:
 
     }
 
+    // printf("attempt: %d\n", attempt);
 
+
+    int imb_count = 0;
 
     for(int i = 0; i < batch.size(); i++){
 
@@ -1579,6 +1662,9 @@ public:
     
 
       if(this->_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99){
+
+        imb_count++;
+
 
         for (int z = 0; z < _f; z++){
           batch.splitVecArray[i * _f + z] = 0;
@@ -1598,6 +1684,8 @@ public:
         }
       }
     }
+
+    // printf("imb rate: %d / %d\n", imb_count, batch.size());
 
     // print_batch(batch, groupArray);
     
@@ -1631,6 +1719,8 @@ public:
 
 
   void launchKernel_classifySideLarge(vector<S>& indices, Group *group, int& n_left, int& n_right, T *splitVec, int batch_max_node){
+    
+    // printf("launchKernel_classifySideLarge()\n");
 
     int offset = group->pos;
     int sz_group = group->sz;
@@ -1690,8 +1780,15 @@ public:
         int n_threads_per_block = 128, n_blocks = batch_sz / n_threads_per_block;
         if(n_blocks * n_threads_per_block != batch_sz) n_blocks++;
         
+
+
+
+
         kernel_classifySideLarge<T, Random><<<n_blocks, n_threads_per_block, _f * sizeof(T)>>>(vecArray_dev, _f, 
                                  batch_sz, splitVec_dev, sides_dev); 
+
+
+
 
         cudaDeviceSynchronize();
 
@@ -1743,104 +1840,6 @@ public:
 
 
 
-
-
-
-
-
-  // void update_groupArray(vector<S>& indices, list<Group>::iterator& group_itr, list<Group>& groupArray,
-  //                             int n_left, int n_right, T* splitVec){
-
-                                
-  //   // for each internal node, the attributes need to be set:
-  //   // - v: get from D::create_split().
-  //   // - n_descendants
-  //   // - children
-
-  //   int pos[2], n[2];
-
-  //   n[0] = n_left;
-  //   n[1] = n_right;
-
-
-  //   pos[0] = group_itr->pos;
-  //   pos[1] = pos[0] + n[0];
-    
-  //   int parent_idx = group_itr->idx;
-  //   Node* p = this->_get(parent_idx);
-
-
-  //   // printf("\n###################\n");
-  //   // printf("remove-before:\n");
-  //   // print_groupArray(groupArray);
-
-  //   group_itr = groupArray.erase(group_itr);
-
-  //   // printf("remove-after:\n");
-  //   // print_groupArray(groupArray);
-  //   // printf("\n---------------------\n");  
-            
-  //   for(int i = 0; i < 2; i++){
-
-  //     // Don't need to create group.
-  //     if (n[i] == 1){
-  //       p->children[i] = indices[pos[i]];
-  //       continue;
-  //     }
-
-
-  //     // a leaf - Don't need to create group.
-  //     if (n[i] <= (size_t)_K) {
-
-        
-  //       this->_allocate_size(_n_nodes + 1);
-  //       S item = _n_nodes++;
-  //       Node* m = this->_get(item);
-
-  //       m->n_descendants = (S)n[i];
-
-  //       if (n[i] > 0){
-          
-  //         memcpy(m->children, &indices[pos[i]], n[i] * sizeof(S));
-  //       }
-
-  //       p->children[i] = item;
-
-  //       continue;
-  //     }
-
-      
-  //     // Need to create group.
-  //     this->_allocate_size(_n_nodes + 1);
-  //     S item = _n_nodes++;
-  //     this->_get(item)->n_descendants = n[i]; // n_descendants
-  //     p->children[i] = item; // children
-
-      
-  //     // printf("push_back-before:\n");
-  //     // print_groupArray(groupArray);
-
-  //     // groupArray.push_back(Group(pos[i], n[i], item));
-  //     groupArray.insert(group_itr, Group(pos[i], n[i], item));
-
-  //     // printf("push_back-after:\n");
-  //     // print_groupArray(groupArray);
-  //     // printf("\n---------------------\n"); 
-
-  //   }
-
-  //   group_itr--;
-
-  
-
-  //   memcpy(p->v, splitVec, _f * sizeof(T)); // v          
-  // }
-
-
-
-
-
-
   void update_groupArray(vector<S>& indices, Group *group,
                               Group **children_group, int n_left, int n_right, T* splitVec){
 
@@ -1852,19 +1851,16 @@ public:
     pos[0] = group->pos;
     pos[1] = pos[0] + n[0];
     
-    // int parent_idx = group->idx;
-    // printf("parent_idx: %d\n", parent_idx);
-    // Node* p = this->_get(parent_idx);
+
+    // n[0] = n_right;
+    // n[1] = n_left;
+
+    // pos[1] = group->pos;
+    // pos[0] = pos[1] + n[1];
+    
+
+
     Node* p_tmp = (Node*)alloca(_s); // _s: size of a node.
-
-
-
-    // printf("a1\n");
-    // printf("%d", p->children[1]);
-    // printf("a2\n");
-
-    // group_itr = groupArray.erase(group_itr);
-
 
     for(int i = 0; i < 2; i++){
 
@@ -1874,9 +1870,6 @@ public:
       // Don't need to create group.
       if (n[i] == 1){
 
-        // printf("b\n");
-
-      
         p_tmp->children[i] = indices[pos[i]];
         continue;
       }
@@ -1884,8 +1877,6 @@ public:
 
       // a leaf - Don't need to create group.
       if (n[i] <= (size_t)_K) {
-
-        // printf("a\n");
 
         this->_allocate_size(_n_nodes + 1);
         S item = _n_nodes++;
@@ -1898,9 +1889,6 @@ public:
         }
 
         p_tmp->children[i] = item;
-
-        // printf("c\n");
-
         continue;
       }
 
@@ -1909,14 +1897,7 @@ public:
       this->_allocate_size(_n_nodes + 1);
 
       S item = _n_nodes++;
-      // printf("allocate idx: %d\n", item);
-
-      // printf("f3\n");
-
       p_tmp->children[i] = item; // children
-      
-      // printf("f4\n");
-
       Node* m = this->_get(item); // n_descendants
       m->n_descendants = n[i];
 
@@ -1924,12 +1905,8 @@ public:
       children_group[i] = new Group(pos[i], n[i], item);
     }
 
-
-
-    // p_tmp->n_descendants = group->sz;
     memcpy(this->_get(group->idx)->v, splitVec, _f * sizeof(T)); // v     
     memcpy(this->_get(group->idx)->children, p_tmp->children, 2 * sizeof(S));     
-    // memcpy(_get(group->idx)->v, p_tmp->v, _f * sizeof(T));     
   }
 
 
@@ -1960,7 +1937,6 @@ public:
 
 
   S _make_tree(vector<S>& indices) {
-    // printf("\n##############################\n_make_tree\n");
 
     this->_allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
@@ -1978,56 +1954,50 @@ public:
     }
 
 
-    // printf("[_make_tree()] allocate idx: %d\n", item);
     std::list<Group *> groupArray;
     groupArray.push_back(new Group(0, indices.size(), item));
-
-    // typedef Group Group_t;
-    // std::list<typename AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::Group>::iterator it;
 
 
     Batch batch = Batch(_f, _s);
 
     // handle too-large groups.
 
-    // int n_left, n_right;
-    // T *splitVec = new T[_f]; 
+    int n_left, n_right;
+    T *splitVec = new T[_f]; 
       
-    // while(1){
+    while(1){
 
-
-    //   bool done = true;
+      bool done = true;
     
-    //   for (typename std::list<Group *>::iterator it = groupArray.begin();
-                                                      //  it != groupArray.end(); ){
+      for (typename std::list<Group *>::iterator it = groupArray.begin();
+                                                       it != groupArray.end(); ){
         
-    //     if(it->sz > batch.batch_max_node){
+        if((*it)->sz > batch.batch_max_node){
 
-    //       launchKernel_classifySideLarge(indices, &(*it), n_left,
-    //                                                  n_right, splitVec, batch.batch_max_node);
+          launchKernel_classifySideLarge(indices, *it, n_left,
+                                                     n_right, splitVec, batch.batch_max_node);
 
-    //       Group *children_group[2];
-    //       update_groupArray(indices, *it, children_group, n_left, n_right, splitVec);
+          Group *children_group[2];
+          update_groupArray(indices, *it, children_group, n_left, n_right, splitVec);
           
-    //       for(int i = 0; i < 2; i++){
-    //         if(!children_group[i]) continue;
-    //         groupArray.insert(it, children_group[i]);
-    //       }
+          for(int i = 0; i < 2; i++){
+            if(!children_group[i]) continue;
+            groupArray.insert(it, children_group[i]);
+          }
 
-    //       it = groupArray.erase(it);
+          it = groupArray.erase(it);
 
-    //       done = false;                                              
-    //     }
-    //     else{
-    //       ++it;
-    //     }
-    //   }
+          done = false;                                              
+        }
+        else{
+          ++it;
+        }
+      }
 
-    //   if(done) break;
-    // }
+      if(done) break;
+    }
 
-
-    // delete [] splitVec;
+    delete [] splitVec;
     
 
 
@@ -2035,61 +2005,37 @@ public:
     
     while(groupArray.size() > 0){
 
-
-      // printf("before erase all:\n");
-      // print_groupArray(groupArray);
-      // printf("\n--------------------\n");
+      
 
       for (typename std::list<Group *>::iterator itr = groupArray.begin(); 
                                                       itr != groupArray.end();){
-        
-
+      
         if(batch.can_push(*itr)){
           
           batch.push_back(*itr);
-          // printf("batch.size(): %d\n", batch.size());
           itr = groupArray.erase(itr);
-   
         }
         else {
           break;
         }
       }
 
-      // printf("d\n");
+      printf("batch.size(): %d\n", batch.size());
+
       launchKernel_classifySideSmall(batch, indices);
-      // printf("e\n");
-      
-
-
+    
       for(int i = 0; i < batch.size(); i++){
 
-        // printf("%d / %d:\n",  i+ 1, batch.size());
-        // printf("sz: %d, n_left: %d, n_right: %d\n", batch[i].group->sz, 
-        //                             batch[i].n_left, batch[i].n_right);
-
-
-        // printf("pos: %d, sz: %d, idx: %d\n", 
-        //           batch[i].group->pos, batch[i].group->sz, batch[i].group->idx);
-
-
         Group *children_group[2];
-
-    
         update_groupArray(indices, batch[i].group, children_group,  batch[i].n_left, 
                                     batch[i].n_right,  batch.get_splitVec(i));
 
         for(int i = 0; i < 2; i++){
           if(!children_group[i]) continue;
           groupArray.push_front(children_group[i]);
-        }
-
-        // print_groupArray(groupArray);
-        // printf("\n---------------------\n"); 
+        } 
 
       }
-
-      // printf("\n######################\n"); 
 
       batch.clear();
     }

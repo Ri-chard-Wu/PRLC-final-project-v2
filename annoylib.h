@@ -1383,7 +1383,7 @@ public:
     while(n_left + n_right < sz_group){
       
       if(sides[n_left] == 1){ // right
-        swap<int>(sides, n_left, sz_group - n_right);
+        swap<int>(sides, n_left, sz_group - 1 - n_right);
         swap<S>(indices, offset + n_left, (offset + sz_group - 1) - n_right);
         n_right++;
       }
@@ -1438,11 +1438,7 @@ public:
 
       for(int idx = 0; idx < sz; idx++){
 
-        // printf("indices.size(): %d, _n_items: %d, offset: %d, idx: %d\n",
-        //                                indices.size(), _n_items, offset, idx);
-        
         Node *node = this->_get(indices[offset + idx]);
-
         
         memcpy(iter, node->v, (_f) * sizeof(T));
 
@@ -1576,17 +1572,11 @@ public:
     }
 
 
-    
-
-
 
     for(int i = 0; i < batch.size(); i++){
 
       if(batch[i].is_balanced) continue;
     
-      int offset_indices = batch[i].group->pos;
-      int sz_group = batch[i].group->sz;
-
 
       if(this->_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99){
 
@@ -1594,7 +1584,9 @@ public:
           batch.splitVecArray[i * _f + z] = 0;
         }    
             
-
+        int offset_indices = batch[i].group->pos;
+        int sz_group = batch[i].group->sz;
+        
         while (this->_split_imbalance(batch[i].n_left, batch[i].n_right) > 0.99) {
 
           for(int j = 0; j < sz_group; j++){
@@ -1607,16 +1599,14 @@ public:
       }
     }
 
-
     // print_batch(batch, groupArray);
     
-
     cudaFree(vecArray_dev);
     cudaFree(sides_dev);
     cudaFree(szArray_dev);
     cudaFree(needCompute_dev);
     cudaFree(splitVecArray_dev);
-
+   
     delete [] vecArray_host;
     delete [] sides_host;
     delete [] szArray_host;
@@ -1862,8 +1852,12 @@ public:
     pos[0] = group->pos;
     pos[1] = pos[0] + n[0];
     
-    int parent_idx = group->idx;
-    Node* p = this->_get(parent_idx);
+    // int parent_idx = group->idx;
+    // printf("parent_idx: %d\n", parent_idx);
+    // Node* p = this->_get(parent_idx);
+    Node* p_tmp = (Node*)alloca(_s); // _s: size of a node.
+
+
 
     // printf("a1\n");
     // printf("%d", p->children[1]);
@@ -1880,8 +1874,10 @@ public:
       // Don't need to create group.
       if (n[i] == 1){
 
+        // printf("b\n");
+
       
-        p->children[i] = indices[pos[i]];
+        p_tmp->children[i] = indices[pos[i]];
         continue;
       }
 
@@ -1889,12 +1885,11 @@ public:
       // a leaf - Don't need to create group.
       if (n[i] <= (size_t)_K) {
 
+        // printf("a\n");
 
-        
         this->_allocate_size(_n_nodes + 1);
         S item = _n_nodes++;
         Node* m = this->_get(item);
-
         m->n_descendants = (S)n[i];
 
         if (n[i] > 0){
@@ -1902,7 +1897,9 @@ public:
           memcpy(m->children, &indices[pos[i]], n[i] * sizeof(S));
         }
 
-        p->children[i] = item;
+        p_tmp->children[i] = item;
+
+        // printf("c\n");
 
         continue;
       }
@@ -1912,25 +1909,27 @@ public:
       this->_allocate_size(_n_nodes + 1);
 
       S item = _n_nodes++;
+      // printf("allocate idx: %d\n", item);
+
+      // printf("f3\n");
+
+      p_tmp->children[i] = item; // children
+      
+      // printf("f4\n");
+
       Node* m = this->_get(item); // n_descendants
       m->n_descendants = n[i];
 
-      printf("f3\n");
-
-      p->children[i] = item; // children
-
-      printf("f4\n");
 
       children_group[i] = new Group(pos[i], n[i], item);
-
-      
-
     }
 
 
 
-
-    memcpy(p->v, splitVec, _f * sizeof(T)); // v          
+    // p_tmp->n_descendants = group->sz;
+    memcpy(this->_get(group->idx)->v, splitVec, _f * sizeof(T)); // v     
+    memcpy(this->_get(group->idx)->children, p_tmp->children, 2 * sizeof(S));     
+    // memcpy(_get(group->idx)->v, p_tmp->v, _f * sizeof(T));     
   }
 
 
@@ -1961,7 +1960,7 @@ public:
 
 
   S _make_tree(vector<S>& indices) {
-    printf("\n##############################\n_make_tree\n");
+    // printf("\n##############################\n_make_tree\n");
 
     this->_allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
@@ -1979,7 +1978,7 @@ public:
     }
 
 
-
+    // printf("[_make_tree()] allocate idx: %d\n", item);
     std::list<Group *> groupArray;
     groupArray.push_back(new Group(0, indices.size(), item));
 
@@ -1991,8 +1990,8 @@ public:
 
     // handle too-large groups.
 
-    int n_left, n_right;
-    T *splitVec = new T[_f]; 
+    // int n_left, n_right;
+    // T *splitVec = new T[_f]; 
       
     // while(1){
 
@@ -2028,7 +2027,7 @@ public:
     // }
 
 
-    delete [] splitVec;
+    // delete [] splitVec;
     
 
 
@@ -2057,8 +2056,9 @@ public:
         }
       }
 
-      
+      // printf("d\n");
       launchKernel_classifySideSmall(batch, indices);
+      // printf("e\n");
       
 
 
@@ -2069,15 +2069,15 @@ public:
         //                             batch[i].n_left, batch[i].n_right);
 
 
-        printf("pos: %d, sz: %d, idx: %d\n", 
-                  batch[i].group->pos, batch[i].group->sz, batch[i].group->idx);
+        // printf("pos: %d, sz: %d, idx: %d\n", 
+        //           batch[i].group->pos, batch[i].group->sz, batch[i].group->idx);
 
 
         Group *children_group[2];
 
+    
         update_groupArray(indices, batch[i].group, children_group,  batch[i].n_left, 
                                     batch[i].n_right,  batch.get_splitVec(i));
-
 
         for(int i = 0; i < 2; i++){
           if(!children_group[i]) continue;

@@ -1912,16 +1912,10 @@ public:
       this->_allocate_size(_n_nodes + 1);
 
       S item = _n_nodes++;
-
-      
-   
-      this->_get(item)->n_descendants = n[i]; // n_descendants
+      Node* m = this->_get(item); // n_descendants
+      m->n_descendants = n[i];
 
       printf("f3\n");
-
-
-
-
 
       p->children[i] = item; // children
 

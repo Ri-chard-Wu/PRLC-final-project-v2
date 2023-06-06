@@ -189,8 +189,12 @@ int main(int argc, char **argv) {
 
 
 	f = 786;
-	n = 100000;
+	n = 10000;
 	n_trees = 2;
+
+	// f = 32;
+	// n = 10000000;
+	// n_trees = 2;
 
 	// f = 756;
 	// n = 20000;

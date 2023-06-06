@@ -381,9 +381,6 @@ struct Angular : Base {
     Base::normalize<T, Node<S, T> >(n, f);
   }
 
-
-
-
   template<typename T>
   static inline T normalized_distance(T distance) {
     // Used when requesting distances from Python layer
@@ -391,12 +388,16 @@ struct Angular : Base {
     // so we have to make sure it's a positive number.
     return sqrt(std::max(distance, T(0)));
   }
+
+
   template<typename T>
   static inline T pq_distance(T distance, T margin, int child_nr) {
     if (child_nr == 0)
       margin = -margin;
     return std::min(distance, margin);
   }
+
+
   template<typename T>
   static inline T pq_initial_value() {
     return numeric_limits<T>::infinity();
@@ -405,6 +406,7 @@ struct Angular : Base {
   static inline void init_node(Node<S, T>* n, int f) {
     n->norm = dot(n->v, n->v, f);
   }
+
   static const char* name() {
     return "angular";
   }
@@ -750,12 +752,17 @@ public:
     return D::normalized_distance(D::distance(_get(i), _get(j), _f));
   }
 
+
+  // n: number of neighbors to return.
+  // search_k: search `search_k` number of nodes to find neighbors. 
   void get_nns_by_item(S item, size_t n, int search_k, 
                 vector<S>* result, vector<T>* distances) const {
     // TODO: handle OOB
     const Node* m = _get(item);
     _get_all_nns(m->v, n, search_k, result, distances);
   }
+
+
 
   void get_nns_by_vector(const T* w, size_t n, int search_k, 
                 vector<S>* result, vector<T>* distances) const {
@@ -1027,11 +1034,15 @@ public:
 
 
 
-  void _get_all_nns(const T* v, size_t n, int search_k, vector<S>* result, vector<T>* distances) const {
+
+  // not O(log(N)), but O(N) -- bad.
+  void _get_all_nns(const T* v, size_t n, int search_k, vector<S>* result,
+                                         vector<T>* distances) const {
 
     
     Node* v_node = (Node *)alloca(_s);
-    D::template zero_value<Node>(v_node);
+    D::template zero_value<Node>(v_node); // no effect.
+
     memcpy(v_node->v, v, sizeof(T) * _f);
     D::init_node(v_node, _f);
 
@@ -1042,48 +1053,71 @@ public:
     }
 
     for (size_t i = 0; i < _roots.size(); i++) {
+      // pq_initial_value() returns numeric_limits<T>::infinity().
       q.push(make_pair(Distance::template pq_initial_value<T>(), _roots[i]));
     }
 
+
+    
     std::vector<S> nns;
+
+    
     while (nns.size() < (size_t)search_k && !q.empty()) {
+      
       const pair<T, S>& top = q.top();
       T d = top.first;
       S i = top.second;
       Node* nd = _get(i);
       q.pop();
+
       if (nd->n_descendants == 1 && i < _n_items) {
         nns.push_back(i);
-      } else if (nd->n_descendants <= _K) {
+      } 
+      else if (nd->n_descendants <= _K) {
         const S* dst = nd->children;
         nns.insert(nns.end(), dst, &dst[nd->n_descendants]);
-      } else {
-        T margin = D::margin(nd, v, _f);
+      } 
+      else {
+        
+        T margin = D::margin(nd, v, _f); // dot of nd->v and v.
+
+        // d is used by priority queue to sort. Larger ones are close to front.
         q.push(make_pair(D::pq_distance(d, margin, 1), static_cast<S>(nd->children[1])));
         q.push(make_pair(D::pq_distance(d, margin, 0), static_cast<S>(nd->children[0])));
       }
     }
+
+
+
 
     // Get distances for all items
     // To avoid calculating distance multiple times for any items, sort by id
     std::sort(nns.begin(), nns.end());
     vector<pair<T, S> > nns_dist;
     S last = -1;
+
     for (size_t i = 0; i < nns.size(); i++) {
+
       S j = nns[i]; 
-      if (j == last)
-        continue;
+      if (j == last) continue;
+
       last = j;
+
       if (_get(j)->n_descendants == 1)  // This is only to guard a really obscure case, #284
         nns_dist.push_back(make_pair(D::distance(v_node, _get(j), _f), j));
     }
 
+
+
     size_t m = nns_dist.size();
     size_t p = n < m ? n : m; // Return this many items
     std::partial_sort(nns_dist.begin(), nns_dist.begin() + p, nns_dist.end());
+
     for (size_t i = 0; i < p; i++) {
-      if (distances)
+
+      if (distances) // no.
         distances->push_back(D::normalized_distance(nns_dist[i].first));
+
       result->push_back(nns_dist[i].second);
     }
   }
@@ -1470,37 +1504,23 @@ public:
 
 
   void launchKernel_classifySideSmall(Batch &batch, vector<S>& indices){
-    
-    printf("batch group sizes: ");
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    // std::cout<<"kernel time: "<<duration.count()<<" us"<< std::endl;
+
+
+    // printf("batch group sizes: ");
     int batch_sz = 0;
     for(int i = 0; i < batch.size(); i++){
       batch_sz += batch[i].group->sz;
-      printf("%d, ", batch[i].group->sz);
+      // printf("%d, ", batch[i].group->sz);
     }   
 
-    printf("; batch_sz: %d\n", batch_sz);
+    // printf("batch_sz: %d\n", batch_sz);
 
-    // -------------------------------------
-
-    // T *vecArray_dev, *vecArray_host, *iter;
-    // cudaMalloc(&vecArray_dev, batch_sz * _f * sizeof(T));
-    // vecArray_host = new T[batch_sz * _f];
-    // iter = vecArray_host;
-
-    // for(int i = 0; i < batch.size(); i++){
-    
-    //   int offset = batch[i].group->pos;
-    //   int sz = batch[i].group->sz;
-
-    //   for(int idx = 0; idx < sz; idx++){
-
-    //     Node *node = this->_get(indices[offset + idx]);
-        
-    //     memcpy(iter, node->v, (_f) * sizeof(T));
-
-    //     iter += _f;
-    //   }
-    // }
+    // ------------------------------------
 
 
     T *vecArray_dev, *vecArray_host, *iter;
@@ -1508,6 +1528,10 @@ public:
     vecArray_host = new T[batch_sz * _f];
     int offset_batch = 0;
 
+
+
+    start = std::chrono::high_resolution_clock::now();
+    
     for(int i = 0; i < batch.size(); i++){
     
       int offset = batch[i].group->pos;
@@ -1525,9 +1549,26 @@ public:
 
       offset_batch += sz;
     }
+    
+    stop = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout<<"vecArray prepare time: "<<duration.count()<<" us"<< std::endl;
+
+
+
+    printf("batch_sz: %d\n", batch_sz);
+
+    start = std::chrono::high_resolution_clock::now();
 
     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
                     batch_sz * _f * sizeof(T), cudaMemcpyHostToDevice);
+
+    stop = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout<<"vecArray cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
+
+
+
 
     
 
@@ -1553,7 +1594,6 @@ public:
                     batch.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // -------------------------------------
-
 
     int *needCompute_dev, *needCompute_host;
     cudaMalloc(&needCompute_dev, batch.size() * sizeof(int));
@@ -1581,9 +1621,16 @@ public:
         find_split(indices, offset, sz, splitVecArray_host + i * _f);
       }
 
+      start = std::chrono::high_resolution_clock::now();
 
       cudaMemcpy((BYTE *)splitVecArray_dev, (BYTE *)splitVecArray_host, 
                       batch.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
+
+      stop = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      std::cout<<"splitVecArray cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
+
+
 
       // -------------------------------------
       
@@ -1604,14 +1651,19 @@ public:
       dim3 nThreadsPerBlock(n_threads_per_block, 1, 1);
       dim3 nBlocks(batch.size(), batch[0].group->sz / (n_threads_per_block * 16), 1);
 
-      // int n_blocks = batch.size(), n_threads_per_block = 256;
+
+
+
+      start = std::chrono::high_resolution_clock::now();
 
       kernel_classifySideSmall<T, Random><<<nBlocks, nThreadsPerBlock, _f * sizeof(T)>>>\
           (batch.size(), _f, vecArray_dev, needCompute_dev, batch_sz, szArray_dev,
                    splitVecArray_dev, sides_dev); 
+      cudaDeviceSynchronize();
 
-
-
+      stop = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      std::cout<<"kernel time: "<<duration.count()<<" us"<< std::endl;
 
 
 
@@ -1619,8 +1671,16 @@ public:
 
       // -------------------------------------
 
+
+      start = std::chrono::high_resolution_clock::now();
+
       cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
                 batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+      stop = std::chrono::high_resolution_clock::now();
+      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      std::cout<<"side cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
 
 
       offset_batch = 0;
@@ -1700,6 +1760,8 @@ public:
     delete [] szArray_host;
     delete [] needCompute_host;
   }
+
+
 
 
   // void print_batch(Batch& batch, queue<Group>& groupArray){
@@ -1852,16 +1914,8 @@ public:
     pos[1] = pos[0] + n[0];
     
 
-    // n[0] = n_right;
-    // n[1] = n_left;
-
-    // pos[1] = group->pos;
-    // pos[0] = pos[1] + n[1];
+    Node *p = this->_get(group->idx);
     
-
-
-    Node* p_tmp = (Node*)alloca(_s); // _s: size of a node.
-
     for(int i = 0; i < 2; i++){
 
       
@@ -1870,7 +1924,7 @@ public:
       // Don't need to create group.
       if (n[i] == 1){
 
-        p_tmp->children[i] = indices[pos[i]];
+        p->children[i] = indices[pos[i]];
         continue;
       }
 
@@ -1888,16 +1942,16 @@ public:
           memcpy(m->children, &indices[pos[i]], n[i] * sizeof(S));
         }
 
-        p_tmp->children[i] = item;
+        p->children[i] = item;
         continue;
       }
 
-   
+    
       // Need to create group.
       this->_allocate_size(_n_nodes + 1);
 
       S item = _n_nodes++;
-      p_tmp->children[i] = item; // children
+      p->children[i] = item; // children
       Node* m = this->_get(item); // n_descendants
       m->n_descendants = n[i];
 
@@ -1906,7 +1960,6 @@ public:
     }
 
     memcpy(this->_get(group->idx)->v, splitVec, _f * sizeof(T)); // v     
-    memcpy(this->_get(group->idx)->children, p_tmp->children, 2 * sizeof(S));     
   }
 
 
@@ -2005,8 +2058,6 @@ public:
     
     while(groupArray.size() > 0){
 
-      
-
       for (typename std::list<Group *>::iterator itr = groupArray.begin(); 
                                                       itr != groupArray.end();){
       
@@ -2020,14 +2071,22 @@ public:
         }
       }
 
-      printf("batch.size(): %d\n", batch.size());
+      // printf("batch.size(): %d\n", batch.size());
+
+      auto start = std::chrono::high_resolution_clock::now();
 
       launchKernel_classifySideSmall(batch, indices);
+
+      auto stop = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+      std::cout<<"launchKernel_classifySideSmall() time: "<<duration.count()<<" us"<< std::endl;
+      std::cout<<"\n---------------------\n";
+
     
       for(int i = 0; i < batch.size(); i++){
 
         Group *children_group[2];
-        update_groupArray(indices, batch[i].group, children_group,  batch[i].n_left, 
+        update_groupArray(indices, batch[i].group, children_group, batch[i].n_left, 
                                     batch[i].n_right,  batch.get_splitVec(i));
 
         for(int i = 0; i < 2; i++){

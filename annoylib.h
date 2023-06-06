@@ -211,7 +211,7 @@ inline void two_means(const vector<Node*>& nodes, int f,
   Distance::template copy_node<T, Node>(p, nodes[i], f);
   Distance::template copy_node<T, Node>(q, nodes[j], f);
 
-  if (cosine) { 
+  if (cosine) { // yes
     Distance::template normalize<T, Node>(p, f); 
     Distance::template normalize<T, Node>(q, f);
   }
@@ -229,7 +229,7 @@ inline void two_means(const vector<Node*>& nodes, int f,
     T di = ic * Distance::distance(p, nodes[k], f);
     T dj = jc * Distance::distance(q, nodes[k], f);
   
-    T norm = cosine ? get_norm(nodes[k]->v, f) : 1;
+    T norm = cosine ? get_norm(nodes[k]->v, f) : 1;  // cosine == true
     
     if (!(norm > T(0))) {
       continue;
@@ -1274,36 +1274,162 @@ __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *n
 
 
 
+template<typename S, typename T, typename Random>
+void create_split(const vector<Node<S, T>*>& nodes, 
+            int f, size_t s, Random& random, Node<S, T>* n, T *p, T *q) {
+
+
+  two_means<T, Random, Angular, Node<S, T> >(nodes, f, random, true, p, q);
+
+  for (int z = 0; z < f; z++)
+    n->v[z] = p->v[z] - q->v[z];
+
+  Base::normalize<T, Node<S, T> >(n, f);
+}
+
+
+template<typename T>
+__device__ 
+void copy_vec(T *vec_dst, T *vec_src, int f){
+  for(int i = 0; i < f; i++){
+    vec_dst[i] = vec_src[i];
+  }
+}
+
+
+
+template<typename T>
+__device__
+T dot(const T* x, const T* y, int f) {
+  T s = 0;
+  for (int z = 0; z < f; z++) {
+    s += (*x) * (*y);
+    x++;
+    y++;
+  }
+  return s;
+}
+
+template<typename T>
+__device__
+T get_norm(T* v, int f) {
+  return sqrt(dot(v, v, f));
+}
+
+template<typename T>
+__device__
+void normalize(T* vec, int f) {
+  T norm = get_norm(vec, f);
+  if (norm > 0) {
+    for (int z = 0; z < f; z++)
+      vec /= norm;
+  }
+}
+
+
+
+template<typename T, typename Random, typename Distance, typename Node>
+void two_means(const vector<Node*>& nodes, int f, 
+                        Random& random, bool cosine, Node* p, Node* q) {
+
+  static int iteration_steps = 200;
+  size_t count = nodes.size();
+
+  size_t i = random.index(count);
+  size_t j = random.index(count-1);
+  j += (j >= i); // ensure that i != j
+
+
+
+
+  copy_vec<T>(p, nodes[i], f);
+  copy_vec<T>(q, nodes[j], f);
+
+
+
+
+
+  if (cosine) { // yes
+    normalize<T>(p, f); 
+    normalize<T>(q, f);
+  }
+
+  Distance::init_node(p, f);
+  Distance::init_node(q, f);
+
+  int ic = 1, jc = 1;
+
+  for (int l = 0; l < iteration_steps; l++) {
+   
+    size_t k = random.index(count);
+ 
+    T di = ic * Distance::distance(p, nodes[k], f);
+    T dj = jc * Distance::distance(q, nodes[k], f);
+  
+    T norm = cosine ? get_norm(nodes[k]->v, f) : 1;  // cosine == true
+    
+    if (!(norm > T(0))) {
+      continue;
+    }
+
+
+    if (di < dj) {
+      
+      for (int z = 0; z < f; z++)
+        p->v[z] = (p->v[z] * ic + nodes[k]->v[z] / norm) / (ic + 1);
+     
+      Distance::init_node(p, f);
+      ic++;
+    } 
+    else if (dj < di) {
+      
+      for (int z = 0; z < f; z++)
+        q->v[z] = (q->v[z] * jc + nodes[k]->v[z] / norm) / (jc + 1);
+      
+      Distance::init_node(q, f);
+      jc++;
+    }
+  }
+
+}
+
+
+template<typename S, typename T, typename Random>
+__device__ find_split(S *indices, int offset, int sz, T *sm){
+
+
+
+}
+
+
 
 template<typename T, typename Random>
-__global__ void kernel_classifySideLarge(T *vecArray, int f,
-                                 int batch_sz, T *splitVec, int *sides){
+__global__ void kernel_computeSplit(indices, Group *groupArray, int n_group, T *splitVecArray){
 
-    int gid = blockIdx.x * blockDim.x + threadIdx.x;
-    int tid = threadIdx.x;
+
+  // if(!needCompute(blockIdx.x)) return;
+
+  int bid = blockIdx.x;
+  int tid = threadIdx.x;
+
+  int offset = groupArray[bid].pos;
+  int sz = groupArray[bid].sz;
+
+  extern __shared__ T sm[];
+
+
+
+  for (int attempt = 0; attempt < 3; attempt++){
+
+  
+    if(tid == 0){
+      find_split(indices, offset, sz, sm);
+    }    
+      
     
-    Random _random(Random::default_seed + gid);
 
-    // __shared__ T sm[f];
-    extern __shared__ T sm[];
-
-    int idx = tid;
-    while(idx < f){
-      sm[idx] = splitVec[idx];
-      idx += blockDim.x;
-    }
-
-    if(gid > batch_sz) return;
-    __syncthreads();    
-
-
-    T dot = 0.;
-    for(int i = 0; i < f; i++){
-      dot += (vecArray + gid * f)[i] * sm[i];
-    }
-
-    if(dot != 0) sides[gid] = (int)(dot > 0);
-    else sides[gid] = _random.flip();
+    
+  }      
 }
 
 
@@ -1499,26 +1625,12 @@ public:
 
 
 
-
-
-
-
   void launchKernel_classifySideSmall(Batch &batch, vector<S>& indices){
 
-    auto start = std::chrono::high_resolution_clock::now();
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    // std::cout<<"kernel time: "<<duration.count()<<" us"<< std::endl;
-
-
-    // printf("batch group sizes: ");
     int batch_sz = 0;
     for(int i = 0; i < batch.size(); i++){
       batch_sz += batch[i].group->sz;
-      // printf("%d, ", batch[i].group->sz);
     }   
-
-    // printf("batch_sz: %d\n", batch_sz);
 
     // ------------------------------------
 
@@ -1527,11 +1639,7 @@ public:
     cudaMalloc(&vecArray_dev, batch_sz * _f * sizeof(T));
     vecArray_host = new T[batch_sz * _f];
     int offset_batch = 0;
-
-
-
-    start = std::chrono::high_resolution_clock::now();
-    
+ 
     for(int i = 0; i < batch.size(); i++){
     
       int offset = batch[i].group->pos;
@@ -1550,27 +1658,9 @@ public:
       offset_batch += sz;
     }
     
-    stop = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    std::cout<<"vecArray prepare time: "<<duration.count()<<" us"<< std::endl;
-
-
-
-    printf("batch_sz: %d\n", batch_sz);
-
-    start = std::chrono::high_resolution_clock::now();
-
     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
                     batch_sz * _f * sizeof(T), cudaMemcpyHostToDevice);
 
-    stop = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    std::cout<<"vecArray cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
-
-
-
-
-    
 
     // -------------------------------------
 
@@ -1621,16 +1711,8 @@ public:
         find_split(indices, offset, sz, splitVecArray_host + i * _f);
       }
 
-      start = std::chrono::high_resolution_clock::now();
-
       cudaMemcpy((BYTE *)splitVecArray_dev, (BYTE *)splitVecArray_host, 
                       batch.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
-
-      stop = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-      std::cout<<"splitVecArray cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
-
-
 
       // -------------------------------------
       
@@ -1645,43 +1727,21 @@ public:
 
       // -------------------------------------
 
-
-
       int n_threads_per_block = 128;
       dim3 nThreadsPerBlock(n_threads_per_block, 1, 1);
       dim3 nBlocks(batch.size(), batch[0].group->sz / (n_threads_per_block * 16), 1);
-
-
-
-
-      start = std::chrono::high_resolution_clock::now();
 
       kernel_classifySideSmall<T, Random><<<nBlocks, nThreadsPerBlock, _f * sizeof(T)>>>\
           (batch.size(), _f, vecArray_dev, needCompute_dev, batch_sz, szArray_dev,
                    splitVecArray_dev, sides_dev); 
       cudaDeviceSynchronize();
 
-      stop = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-      std::cout<<"kernel time: "<<duration.count()<<" us"<< std::endl;
-
-
-
       cudaDeviceSynchronize();
 
       // -------------------------------------
 
-
-      start = std::chrono::high_resolution_clock::now();
-
       cudaMemcpy((BYTE *)sides_host, (BYTE *)sides_dev, 
                 batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-      stop = std::chrono::high_resolution_clock::now();
-      duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-      std::cout<<"side cudaMemcpy time: "<<duration.count()<<" us"<< std::endl;
-
 
       offset_batch = 0;
       int balance_count = 0;
@@ -1705,13 +1765,11 @@ public:
 
         offset_batch += sz_group;
       }
-      // printf("\n");
 
       if(balance_count == batch.size()) break;
 
     }
 
-    // printf("attempt: %d\n", attempt);
 
 
     int imb_count = 0;
@@ -1745,10 +1803,7 @@ public:
       }
     }
 
-    // printf("imb rate: %d / %d\n", imb_count, batch.size());
 
-    // print_batch(batch, groupArray);
-    
     cudaFree(vecArray_dev);
     cudaFree(sides_dev);
     cudaFree(szArray_dev);
@@ -1760,146 +1815,6 @@ public:
     delete [] szArray_host;
     delete [] needCompute_host;
   }
-
-
-
-
-  // void print_batch(Batch& batch, queue<Group>& groupArray){
-    
-  //   printf("\n");
-  //   for(int i = 0; i < batch.size(); i++){
-  //     printf("b%d: n_left: %d, n_right: %d, group sz: %d\n",
-  //          i, batch[i].n_left, batch[i].n_right, groupArray[batch[i].group].sz);
-  //   }
-  //   printf("\n");
-
-  // }
-
-
-
-
-
-
-  void launchKernel_classifySideLarge(vector<S>& indices, Group *group, int& n_left, int& n_right, T *splitVec, int batch_max_node){
-    
-    // printf("launchKernel_classifySideLarge()\n");
-
-    int offset = group->pos;
-    int sz_group = group->sz;
-    
-    int *sides = new int[sz_group];
-    // int n_right, n_left;
-
-
-
-    T *splitVec_dev, *splitVec_host;
-    cudaMalloc(&splitVec_dev, sizeof(T) * _f);
-    splitVec_host = splitVec;
-    
-    
-    T *vecArray_dev, *vecArray_host, *iter;
-    cudaMalloc(&vecArray_dev, batch_max_node * sizeof(T) * _f);
-    vecArray_host = new T[batch_max_node * _f];
-    
-    int *sides_dev;
-    cudaMalloc(&sides_dev, batch_max_node * sizeof(int));
-
-    for (int attempt = 0; attempt < 3; attempt++){
-
-      int batch_start = 0, batch_sz;
-
-      // -------------------------------------
-
-      find_split(indices, offset, sz_group, splitVec_host);
-      cudaMemcpy((BYTE *)splitVec_dev, (BYTE *)splitVec_host, 
-                                        sizeof(T) * _f, cudaMemcpyHostToDevice);
-      // -------------------------------------
-
-      while(1){
-
-        if(batch_start + batch_max_node - 1 < sz_group){
-          batch_sz = batch_max_node;
-        }
-        else{
-          batch_sz = sz_group - batch_start;
-        }
-
-        // -------------------------------------
-
-        iter = vecArray_host;
-        for(int i = batch_start; i < batch_start + batch_sz; i++){
-          Node *node = this->_get(indices[offset + i]);
-          memcpy(iter, node->v, sizeof(T) * _f);
-          iter += _f;
-        }
-
-
-        cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
-                        batch_sz * sizeof(T) * _f , cudaMemcpyHostToDevice);
-
-        // -------------------------------------
-
-        int n_threads_per_block = 128, n_blocks = batch_sz / n_threads_per_block;
-        if(n_blocks * n_threads_per_block != batch_sz) n_blocks++;
-        
-
-
-
-
-        kernel_classifySideLarge<T, Random><<<n_blocks, n_threads_per_block, _f * sizeof(T)>>>(vecArray_dev, _f, 
-                                 batch_sz, splitVec_dev, sides_dev); 
-
-
-
-
-        cudaDeviceSynchronize();
-
-        // -------------------------------------
-
-        cudaMemcpy((BYTE *)(sides + batch_start), (BYTE *)sides_dev, 
-                  batch_sz * sizeof(int), cudaMemcpyDeviceToHost);
-
-        batch_start += batch_sz;
-        if(batch_sz != batch_max_node) break;
-      }
-
-      group_getSideCount(sides, sz_group, n_left, n_right);
-
-      if (this->_split_imbalance(n_left, n_right) < 0.95) {
-        group_moveSide(indices, sides, offset, sz_group);
-        break;
-      }
-    }
-
-
-    // If we didn't find a hyperplane, just randomize sides as a last option
-    if(this->_split_imbalance(n_left, n_right) > 0.99){
-
-      for (int z = 0; z < _f; z++)
-        splitVec_host[z] = 0;
-
-      while (this->_split_imbalance(n_left, n_right) > 0.99) {
-
-        for(int i = 0; i < sz_group; i++){
-          sides[i] = _random.flip();
-        }
-
-        group_moveSide(indices, sides, offset, sz_group);
-        group_getSideCount(sides, sz_group, n_left, n_right);
-      }
-      
-    }
-
-
-
-    cudaFree(splitVec_dev);
-    cudaFree(vecArray_dev);
-    cudaFree(sides_dev);
-    
-    delete [] sides;
-    delete [] vecArray_host;
-  }
-
 
 
   void update_groupArray(vector<S>& indices, Group *group,
@@ -1966,25 +1881,46 @@ public:
 
 
 
+  // int max_node_num = 
 
+  void transfer_vecArray(vector<S>& indices){
 
+    T *vecArray_dev, *vecArray_host;
+    cudaMalloc(&vecArray_dev, indices.size() * _f * sizeof(T));
+    vecArray_host = new T[indices.size() * _f];
+    int offset_batch = 0;
+ 
+    for(int i = 0; i < indices.size(); i++){
 
-  void print_groupArray(std::list<Group *>& groupArray){
-    int sum = 0;
-    printf("\n");
-
-      int i = 0;
-      typename std::list<Group *>::iterator itr;
-      for (itr = groupArray.begin(); itr != groupArray.end(); itr++){
-       
-        printf("g%d: (pos: %d, sz: %d)\n", i++, (*itr)->pos, (*itr)->sz);
-        sum += (*itr)->sz;
+      Node *node = this->_get(indices[i]);
+      
+      for(int z = 0; z < _f; z++){
+        vecArray_host[z] = node->v[z];
       }
-
-    printf("total_sz: %d\n", sum);
-    printf("\n");
+    }
+    cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
+                    indices.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
   }
 
+
+
+
+
+  void launchKernel_computeSplit(S *indices_dev, Group *groupArray_dev, int n_group, T *splitVecArray){
+
+    T *splitVecArray_dev;
+    cudaMalloc(&splitVecArray_dev, n_group * _f * sizeof(T));
+
+    int n_blocks = n_group;
+    int n_threads_per_block = 128;
+
+    kernel_computeSplit<<<n_blocks, n_threads_per_block>>>(indices_dev, groupArray_dev,
+                                           n_group, splitVecArray_dev);
+
+    cudaMemcpy((BYTE *)splitVecArray, (BYTE *)splitVecArray_dev, 
+                    n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
+
+  }
 
 
 
@@ -1997,110 +1933,76 @@ public:
     m->n_descendants = _n_items; 
 
 
+
     if (indices.size() <= (size_t)_K && 
           ((size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
       
       if (!indices.empty()){
         memcpy(m->children, &indices[0], indices.size() * sizeof(S));
       }
+
       return item;
     }
 
 
-    std::list<Group *> groupArray;
-    groupArray.push_back(new Group(0, indices.size(), item));
+    transfer_vecArray(indices);
 
-
-    Batch batch = Batch(_f, _s);
-
-    // handle too-large groups.
-
-    int n_left, n_right;
-    T *splitVec = new T[_f]; 
+    while(!done){
       
-    while(1){
-
-      bool done = true;
-    
-      for (typename std::list<Group *>::iterator it = groupArray.begin();
-                                                       it != groupArray.end(); ){
-        
-        if((*it)->sz > batch.batch_max_node){
-
-          launchKernel_classifySideLarge(indices, *it, n_left,
-                                                     n_right, splitVec, batch.batch_max_node);
-
-          Group *children_group[2];
-          update_groupArray(indices, *it, children_group, n_left, n_right, splitVec);
-          
-          for(int i = 0; i < 2; i++){
-            if(!children_group[i]) continue;
-            groupArray.insert(it, children_group[i]);
-          }
-
-          it = groupArray.erase(it);
-
-          done = false;                                              
-        }
-        else{
-          ++it;
-        }
-      }
-
-      if(done) break;
+      launchKernel_computeSplit(splitVecArray); // splitVecArray: return from gpu.
+      launchKernel_computeSide(sideCountArray); // sideCountArray: return from gpu.
+      add_internal_nodes(splitVecArray, sideCountArray, done);
     }
 
-    delete [] splitVec;
-    
+    // ----------------------------------
 
 
-    // handle smaller groups.
-    
-    while(groupArray.size() > 0){
 
-      for (typename std::list<Group *>::iterator itr = groupArray.begin(); 
-                                                      itr != groupArray.end();){
+
+
+
+  //   std::list<Group *> groupArray;
+  //   groupArray.push_back(new Group(0, indices.size(), item));
+
+  //   Batch batch = Batch(_f, _s);
+
+  //   while(groupArray.size() > 0){
+
+  //     for (typename std::list<Group *>::iterator itr = groupArray.begin(); 
+  //                                                     itr != groupArray.end();){
       
-        if(batch.can_push(*itr)){
+  //       if(batch.can_push(*itr)){
           
-          batch.push_back(*itr);
-          itr = groupArray.erase(itr);
-        }
-        else {
-          break;
-        }
-      }
+  //         batch.push_back(*itr);
+  //         itr = groupArray.erase(itr);
+  //       }
+  //       else {
+  //         break;
+  //       }
+  //     }
 
-      // printf("batch.size(): %d\n", batch.size());
-
-      auto start = std::chrono::high_resolution_clock::now();
-
-      launchKernel_classifySideSmall(batch, indices);
-
-      auto stop = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-      std::cout<<"launchKernel_classifySideSmall() time: "<<duration.count()<<" us"<< std::endl;
-      std::cout<<"\n---------------------\n";
-
+  //     launchKernel_classifySideSmall(batch, indices);
     
-      for(int i = 0; i < batch.size(); i++){
+  //     for(int i = 0; i < batch.size(); i++){
 
-        Group *children_group[2];
-        update_groupArray(indices, batch[i].group, children_group, batch[i].n_left, 
-                                    batch[i].n_right,  batch.get_splitVec(i));
+  //       Group *children_group[2];
+  //       update_groupArray(indices, batch[i].group, children_group, batch[i].n_left, 
+  //                                   batch[i].n_right,  batch.get_splitVec(i));
 
-        for(int i = 0; i < 2; i++){
-          if(!children_group[i]) continue;
-          groupArray.push_front(children_group[i]);
-        } 
+  //       for(int i = 0; i < 2; i++){
+  //         if(!children_group[i]) continue;
+  //         groupArray.push_front(children_group[i]);
+  //       } 
 
-      }
+  //     }
 
-      batch.clear();
-    }
+  //     batch.clear();
+  //   }
 
-    return item;
-  }
+  //   return item;
+  // }
+
+
 };
 
 

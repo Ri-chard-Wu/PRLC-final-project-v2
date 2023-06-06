@@ -1274,19 +1274,6 @@ __global__ void kernel_classifySideSmall(int n_group, int f, T *vecArray, int *n
 
 
 
-template<typename S, typename T, typename Random>
-void create_split(const vector<Node<S, T>*>& nodes, 
-            int f, size_t s, Random& random, Node<S, T>* n, T *p, T *q) {
-
-
-  two_means<T, Random, Angular, Node<S, T> >(nodes, f, random, true, p, q);
-
-  for (int z = 0; z < f; z++)
-    n->v[z] = p->v[z] - q->v[z];
-
-  Base::normalize<T, Node<S, T> >(n, f);
-}
-
 
 template<typename T>
 __device__ 
@@ -1310,11 +1297,13 @@ T dot(const T* x, const T* y, int f) {
   return s;
 }
 
+
 template<typename T>
 __device__
 T get_norm(T* v, int f) {
   return sqrt(dot(v, v, f));
 }
+
 
 template<typename T>
 __device__
@@ -1328,24 +1317,35 @@ void normalize(T* vec, int f) {
 
 
 
+template<typename S, typename T>
+__device__
+T distance(T *vec1, T *vec2, int f) {
+
+  T pp = dot(vec1, vec1, f); 
+  T qq = dot(vec2, vec2, f);
+  T pq = dot(vec1, vec2, f);
+  T ppqq = pp * qq;
+  if (ppqq > 0) return 2.0 - 2.0 * pq / sqrt(ppqq);
+  else return 2.0; // cos is 0
+}
+
+
+
 template<typename T, typename Random, typename Distance, typename Node>
-void two_means(const vector<Node*>& nodes, int f, 
-                        Random& random, bool cosine, Node* p, Node* q) {
+__device__
+void two_means(S *indices, int offset, int sz, T *vecArray, int f, 
+                        Random& random, bool cosine, T* p, T* q) {
 
   static int iteration_steps = 200;
-  size_t count = nodes.size();
+  size_t count = sz;
 
   size_t i = random.index(count);
   size_t j = random.index(count-1);
   j += (j >= i); // ensure that i != j
 
-
-
-
-  copy_vec<T>(p, nodes[i], f);
-  copy_vec<T>(q, nodes[j], f);
-
-
+  
+  copy_vec<T>(p, vecArray[indices[offset + i] * f], f);
+  copy_vec<T>(q, vecArray[indices[offset + j] * f], f);
 
 
 
@@ -1354,8 +1354,8 @@ void two_means(const vector<Node*>& nodes, int f,
     normalize<T>(q, f);
   }
 
-  Distance::init_node(p, f);
-  Distance::init_node(q, f);
+  // Distance::init_node(p, f);
+  // Distance::init_node(q, f);
 
   int ic = 1, jc = 1;
 
@@ -1363,10 +1363,10 @@ void two_means(const vector<Node*>& nodes, int f,
    
     size_t k = random.index(count);
  
-    T di = ic * Distance::distance(p, nodes[k], f);
-    T dj = jc * Distance::distance(q, nodes[k], f);
+    T di = ic * distance(p, vecArray[k * f], f);
+    T dj = jc * distance(q, vecArray[k * f], f);
   
-    T norm = cosine ? get_norm(nodes[k]->v, f) : 1;  // cosine == true
+    T norm = cosine ? get_norm(vecArray[k * f], f) : 1;  // cosine == true
     
     if (!(norm > T(0))) {
       continue;
@@ -1376,22 +1376,38 @@ void two_means(const vector<Node*>& nodes, int f,
     if (di < dj) {
       
       for (int z = 0; z < f; z++)
-        p->v[z] = (p->v[z] * ic + nodes[k]->v[z] / norm) / (ic + 1);
+        p[z] = (p[z] * ic + vecArray[k * f + z] / norm) / (ic + 1);
      
-      Distance::init_node(p, f);
+      // Distance::init_node(p, f);
       ic++;
     } 
     else if (dj < di) {
       
       for (int z = 0; z < f; z++)
-        q->v[z] = (q->v[z] * jc + nodes[k]->v[z] / norm) / (jc + 1);
+        q[z] = (q[z] * jc + vecArray[k * f + z] / norm) / (jc + 1);
       
-      Distance::init_node(q, f);
+      // Distance::init_node(q, f);
       jc++;
     }
   }
 
 }
+
+
+template<typename S, typename T, typename Random>
+__device__
+void create_split(S *indices, int offset, int sz, T *vecArray, 
+              int f, Random& random, T* n, T *p, T *q) {
+
+  two_means<T, Random, Angular, Node<S, T> >(indices, offset, sz, 
+                                    vecArray, f, random, true, p, q);
+
+  for (int z = 0; z < f; z++)
+    n[z] = p[z] - q[z];
+
+  normalize<T>(n, f);
+}
+
 
 
 template<typename S, typename T, typename Random>

@@ -1244,7 +1244,12 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
 
 
   int bid_x = blockIdx.x; 
-  if(groupArray[bid_x].sz < K){
+  // printf("bid_x: %d\n", bid_x);
+  // printf("groupArray[0].pos: %d\n", groupArray[0].pos);
+  // printf("groupArray[0].sz: %d\n", groupArray[0].sz);
+
+
+  if(groupArray[bid_x].sz <= K){
 
     groupArray_next[2 * bid_x + 0].pos = groupArray[bid_x].pos;
     groupArray_next[2 * bid_x + 0].sz = groupArray[bid_x].sz;
@@ -1258,8 +1263,12 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
     return;
   } 
 
+  
+
   int gid = blockIdx.x * blockDim.x + threadIdx.x;
   int tid = threadIdx.x;
+
+  // printf("tid = %d\n", tid);
 
   int offset = groupArray[bid_x].pos;
   int sz = groupArray[bid_x].sz;
@@ -1279,8 +1288,8 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
   int *nLeft_sm = isBalanced_sm + 1;
   int *nRight_sm = nLeft_sm + 1;
   
-
-
+   
+  
   for (int attempt = 0; attempt < 3; attempt++){
 
     *isBalanced_sm = 0;
@@ -1368,8 +1377,12 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
     groupArray_next[2 * bid_x + 1].pos = offset + *nLeft_sm;
     groupArray_next[2 * bid_x + 1].sz = *nRight_sm;
 
+    // printf("[blk%d]: *nLeft_sm: %d\n", bid_x, *nLeft_sm);
+    // printf("[blk%d]: *nRight_sm: %d\n", bid_x, *nRight_sm);
+
     sideCountArray[2 * bid_x] = *nLeft_sm;
     sideCountArray[2 * bid_x + 1] = *nRight_sm;
+    
 
     for (int z = 0; z < f; z++){
       splitVecArray[f * bid_x + z] = splitVec_sm[z];
@@ -1439,8 +1452,8 @@ public:
 
 
 
-  void hostPreKernel_split(S *indexArray, S *indexArray_dev, T *vecArray_dev, 
-                                      int *sideArray_dev, Group *groupArray_dev){
+  void hostPreKernel_split(S *&indexArray, S *&indexArray_dev, T *&vecArray_dev, 
+                                      int *&sideArray_dev, Group *&groupArray_dev){
 
 
     T *vecArray_host;
@@ -1483,8 +1496,8 @@ public:
 
 
 
-  void launchKernel_split(S *indexArray_dev, T* vecArray_dev, Group *&groupArray_dev, 
-                            int n_group, T *&splitVecArray, int *sideArray_dev, 
+  void launchKernel_split(S *&indexArray_dev, T *&vecArray_dev, Group *&groupArray_dev, 
+                            int n_group, T *&splitVecArray, int *&sideArray_dev, 
                               int *&sideCountArray){
 
     T *splitVecArray_dev;
@@ -1500,6 +1513,8 @@ public:
 
     int n_blocks = n_group;
     int n_threads_per_block = 128;
+
+    printf("n_group: %d\n", n_group);
 
     kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, 
             3 * _f * sizeof(T) + 3 * sizeof(int)>>>(indexArray_dev, vecArray_dev,
@@ -1523,18 +1538,25 @@ public:
 
 
 
-  void hostPostKernel_split(S **&childPtrArray, T *splitVecArray, int *sideCountArray, 
+  void hostPostKernel_split(S **&childPtrArray, T *&splitVecArray, int *&sideCountArray, 
                                         int n_group, bool& done){
 
     S **childPtrArray_next = new S*[4 * n_group];
     int done_count = 0;
 
+
     for(int group_i = 0; group_i < n_group; group_i++){
+
+
 
       for(int i = 0; i < 2; i++){
 
+
         // a leaf - Don't need to create group.
         if (sideCountArray[2 * group_i + i] <= (size_t)_K) {
+
+          // printf("c\n");
+
           
           done_count++;
 
@@ -1545,18 +1567,28 @@ public:
         }
 
 
+
         // Need to create group.
         this->_allocate_size(_n_nodes + 1);
         S item = _n_nodes++;
         Node* m = this->_get(item);
 
+        // printf("a\n");
+
         *(childPtrArray[2 * group_i + i]) = item; // children
 
+        // printf("b\n");
+
         m->n_descendants = sideCountArray[2 * group_i + i]; // n_descendants
+
+
         
         childPtrArray_next[4 * group_i + 2 * i + 0] = &(m->children[0]);
-        childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);        
+        childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);
+
+           
       }
+
 
 
       Node *p = (Node *)(((BYTE *)childPtrArray[2 * group_i]) - offsetof(Node, children));
@@ -1580,7 +1612,7 @@ public:
 
 
 
-  void copy_leaf_node(S *indexArray, Group *groupArray, S **childPtrArray, int n_group){
+  void copy_leaf_node(S *&indexArray, Group *&groupArray, S **&childPtrArray, int n_group){
 
     for(int i = 0; i < n_group - 1;){
       
@@ -1605,6 +1637,16 @@ public:
   }
                                                         
 
+  void print_sideCount(int *sideCountArray, int n_group){
+    printf("\n");
+    int sum = 0;
+    for(int i = 0; i< n_group; i++){
+      printf("g%d: %d, %d\n", i, sideCountArray[2 * i + 0], sideCountArray[2 * i + 1]);
+      sum += sideCountArray[2 * i + 0] + sideCountArray[2 * i + 1];
+    }
+    printf("sum: %d\n", sum);
+    printf("\n");
+  }
 
                                                         
   S _make_tree(S *indexArray) {
@@ -1632,35 +1674,63 @@ public:
     S *indexArray_dev;
     int *sideArray_dev;
     Group *groupArray_dev;
+
+    // printf("a\n");
     hostPreKernel_split(indexArray, indexArray_dev, vecArray_dev, sideArray_dev, 
                               groupArray_dev);
+    // printf("b\n");                          
 
-    
     bool done = false;
     int n_group = 1;
     
     S **childPtrArray = new S*[2 * n_group];
+
+    // printf("c\n");
+    childPtrArray[0] = &(m->children[0]);
+    // printf("d\n");
+    childPtrArray[1] = &(m->children[1]);
+    // printf("e\n");
     
     
     T *splitVecArray;  
     int *sideCountArray;
     
-    while(1){
+    int iter = 0;
 
+    while(1){
+      printf("\n-------------\n");
+      printf("iter: %d\n", iter++);
+     
       splitVecArray = new T[_f * n_group];
       sideCountArray = new int[2 * n_group];
 
       launchKernel_split(indexArray_dev, vecArray_dev, groupArray_dev, n_group, 
                               splitVecArray, sideArray_dev, sideCountArray); 
 
+      print_sideCount(sideCountArray, n_group);                              
+      
+      printf("a\n");
+      
       hostPostKernel_split(childPtrArray, splitVecArray, sideCountArray, n_group, done);
+
+      printf("b\n");
 
       delete [] splitVecArray;
       delete [] sideCountArray;
 
+      printf("c\n");
+
       if(!done) n_group = n_group * 2;
       else break;
+
+      printf("d\n");
+
+   
     }
+
+    printf("e\n");
+
+   
 
     cudaMemcpy((BYTE *)indexArray, (BYTE *)indexArray_dev, 
                 _n_items * sizeof(S), cudaMemcpyDeviceToHost);

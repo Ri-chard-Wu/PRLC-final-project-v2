@@ -2,16 +2,36 @@ main.cu(38): warning: conversion from a string literal to "char *" is deprecated
 
 main.cu(126): warning: integer conversion resulted in truncation
 
+annoylib.h(1669): warning: variable "groupArray" is used before its value is set
+
+annoylib.h(1449): warning: variable "offset_batch" was declared but never referenced
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S *) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1635): warning: variable "indexArray_dev" is used before its value is set
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S *) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1635): warning: variable "vecArray_dev" is used before its value is set
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S *) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1635): warning: variable "sideArray_dev" is used before its value is set
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S *) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1636): warning: variable "groupArray_dev" is used before its value is set
+          detected during instantiation of "S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S *) [with S=int, T=double, Distance=Annoy::Angular, Random=Annoy::Kiss32Random, ThreadedBuildPolicy=Annoy::AnnoyIndexSingleThreadedBuildPolicy]" 
+
+annoylib.h(1669): warning: variable "groupArray" is used before its value is set
+
 main.cu(38): warning: conversion from a string literal to "char *" is deprecated
 
 main.cu(126): warning: integer conversion resulted in truncation
 
-main.cu: In function 'int precision(int, int)':
+main.cu: In function 'int precision(int, int, int)':
 main.cu:126:63: warning: overflow in implicit constant conversion [-Woverflow]
     t.get_nns_by_item(j, (*limit), (size_t) -1, &toplist, nullptr);
                                                                ^
-annoylib.h: In instantiation of 'S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(std::vector<_Tp>&) [with S = int; T = double; Distance = Annoy::Angular; Random = Annoy::Kiss32Random; ThreadedBuildPolicy = Annoy::AnnoyIndexSingleThreadedBuildPolicy]':
-/tmp/tmpxft_00001581_00000000-5_main.cudafe1.stub.c:24:27:   required from here
-annoylib.h:1802:15: warning: non-constant array new length must be specified without parentheses around the type-id [-Wvla]
-     T *splitVec = new T[_f];
-               ^~~~~~~~~~~~~~                                                         
+annoylib.h: In instantiation of 'void Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::hostPreKernel_split(S*, S*, T*, int*, Annoy::Group*) [with S = int; T = double; Distance = Annoy::Angular; Random = Annoy::Kiss32Random; ThreadedBuildPolicy = Annoy::AnnoyIndexSingleThreadedBuildPolicy]':
+annoylib.h:1635:20:   required from 'S Annoy::AnnoyIndex_GPU<S, T, Distance, Random, ThreadedBuildPolicy>::_make_tree(S*) [with S = int; T = double; Distance = Annoy::Angular; Random = Annoy::Kiss32Random; ThreadedBuildPolicy = Annoy::AnnoyIndexSingleThreadedBuildPolicy]'
+/tmp/tmpxft_000004ae_00000000-5_main.cudafe1.stub.c:21:27:   required from here
+annoylib.h:1448:18: warning: non-constant array new length must be specified without parentheses around the type-id [-Wvla]
+     vecArray_host = new T[_n_items * _f];
+                 ~^~~~~~~~~~~~~~~~~~~~~~~~

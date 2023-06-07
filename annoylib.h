@@ -1483,8 +1483,8 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
 
     // splitVecArray[]
 
-    sideCountArray[2 * bid_x] = -1;
-    sideCountArray[2 * bid_x + 1] = -1;
+    // sideCountArray[2 * bid_x] = -1;
+    // sideCountArray[2 * bid_x + 1] = -1;
 
 
 
@@ -2115,35 +2115,45 @@ public:
   }
 
 
-  void hostPostKernel_split(S *&idxRow, T *splitVecArray, int *sideCountArray, 
+  void hostPostKernel_split(S **&idxPtrRow, T *splitVecArray, int *sideCountArray, 
                                         int n_group, bool& done){
 
-    S *idxRow_next = new S[2 * n_group];
+    S **idxPtrRow_next = new S*[4 * n_group];
 
     int done_count = 0;
+
+
+    for(int group_i = 0; group_i < n_group; group_i++){
+      
+      Node *p = (Node *)(((BYTE *)idxPtrRow[2 * group_i]) - offsetof(Node, children));
+
+      memcpy(p->v, splitVecArray[group_i], _f * sizeof(T)); // v
+    }
+
 
     for(int group_i = 0; group_i < n_group; group_i++){
 
 
-      S parent_idx = idxRow[group_i];
-      Node *p = this->_get(parent_idx);
+      Node *p = (Node *)(((BYTE *)idxPtrRow[2 * group_i]) - offsetof(Node, children));
+
+      // S parent_idx = idxRow[group_i];
+      // Node *p = this->_get(parent_idx);
+
+      // // a leaf node, with children yet assigned (still in gpu mem).
+      // if(p->children[0] == -1){
+
+      //   done_count++;
+
+      //   idxRow_next[2 * group_i + 0] = parent_idx;
+      //   idxRow_next[2 * group_i + 1] = parent_idx;
+
+      //   continue; 
+      // }
 
 
 
-      // a leaf node, with children yet assigned (still in gpu mem).
-      if(p->n_descendants == -1){
-
-        done_count++;
-
-        idxRow_next[2 * group_i + 0] = parent_idx;
-        idxRow_next[2 * group_i + 1] = parent_idx;
-
-        continue; 
-      }
-
-
-
-      int pos[2], n[2];
+      // int pos[2];
+      int n[2];
 
       n[0] = sideCountArray[2 * group_i + 0];
       n[1] = sideCountArray[2 * group_i + 1];
@@ -2154,23 +2164,7 @@ public:
       for(int i = 0; i < 2; i++){
 
         // children_group[i] = NULL;
-
-
-        if(n[i] = -1){ // node p cannot be splited.
-
-        }
-
-
-        // Don't need to create group.
-        if (n[i] == 1){
-
-          // p->children[i] = indices[pos[i]];
-          p->n_descendants = -1;
-          idxRow_next[2 * group_i + i] = parent_idx;
-          continue;
-        }
-
-
+        // p->children[i] = 0;
 
 
         // a leaf - Don't need to create group.
@@ -2181,20 +2175,19 @@ public:
           // Node* m = this->_get(item);
           // m->n_descendants = (S)n[i];
 
-          // if (n[i] > 0){            
-          //   memcpy(m->children, &indices[pos[i]], n[i] * sizeof(S));
-          // }
+          // m->children[0] = -1;
+          // m->children[1] = parent_idx;
 
           // p->children[i] = item;
+          // *(idxPtrRow[2 * group_i + i]) = item;
 
-          p->n_descendants = -1;
-          idxRow_next[2 * group_i + i] = parent_idx;
+          idxPtrRow[2 * group_i + i] = &(p->children[i]);
+          
+          idxPtrRow_next[4 * group_i + 2 * i + 0] = &(p->children[i]);
+          idxPtrRow_next[4 * group_i + 2 * i + 1] = &(p->children[i]);
+
           continue;
         }
-
-      
-
-
 
 
         // Need to create group.
@@ -2202,28 +2195,34 @@ public:
 
         S item = _n_nodes++;
         p->children[i] = item; // children
-        this->_get(item)->n_descendants = n[i]; // n_descendants
+        Node* m = this->_get(item);
+        m->n_descendants = n[i]; // n_descendants
+        // m->children[0] = 0;
 
         // children_group[i] = new Group(pos[i], n[i], item);
-        idxRow_next[2 * group_i + i] = item;
+        
+        // idxPtrRow_next[2 * group_i + i] = item;
+        idxPtrRow_next[4 * group_i + 2 * i + 0] = &(m->children[0]);
+        idxPtrRow_next[4 * group_i + 2 * i + 1] = &(m->children[1]);        
       }
 
-      memcpy(this->_get(idxRow[group_i])->v, splitVecArray[group_i], _f * sizeof(T)); // v
+      // memcpy(this->_get(idxRow[group_i])->v, splitVecArray[group_i], _f * sizeof(T)); // v
     }
 
     done = false;
     if(done_count == n_group){
       done = true;
-      delete [] idxRow_next;  
+      delete [] idxPtrRow_next;  
       return;
     } 
     
-    delete [] idxRow;
-    idxRow = idxRow_next;
+    delete [] idxPtrRow;
+    idxPtrRow = idxPtrRow_next;
   }
 
 
-  void copy_leaf_node(S *indexArray, Group *groupArray_dev, S *idxRow, int n_group){
+
+  void copy_leaf_node(S *indexArray, Group *groupArray_dev, S *idxPtrRow, int n_group){
 
     Group *groupArray;
     cudaMemcpy((BYTE *)groupArray, (BYTE *)groupArray_dev, 
@@ -2231,24 +2230,29 @@ public:
 
 
     for(int i = 0; i < n_group - 1;){
-
       
-      while(idxRow[i + 1] == idxRow[i]) i++;
+      while(idxPtrRow[i + 1] == idxPtrRow[i]) i++;
 
-      Node *p = this->_get(idxRow[i]);
+      // Node *p = this->_get(idxPtrRow[i]);
       int offset = groupArray[i].pos;
       int sz = groupArray[i].sz;
 
       if(sz == 1){
-        p->children[]
+        *(idxPtrRow[i]) = indexArray[offset];
+        // p->children[1]
         continue;
       }
+      else{
+        if (sz != 0){
 
+          _allocate_size(_n_nodes + 1);
+          S item = _n_nodes++;
+          Node* m = _get(item);
+          m->n_descendants = (S)sz;
+          memcpy(m->children, &indexArray[offset], sz * sizeof(S));
+        }
+      }
 
-
-
-
-      indexArray[offset]
     }
 
 
@@ -2264,6 +2268,7 @@ public:
     S item = _n_nodes++;
     Node* m = this->_get(item); 
     m->n_descendants = _n_items; 
+    m->children[0] = 0;
 
 
 
@@ -2287,7 +2292,9 @@ public:
 
     bool done = false;
     int n_group = 1;
-    S *idxRow = new S[n_group];
+    
+    // S *idxRow = new S[n_group];
+    S **idxPtrRow = new S*[2 * n_group];
 
     Group *groupArray_dev;
 

@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
 
 	f = 786;
 	n = 100000;
-	n_trees = 2;
+	n_trees = 20;
 
 	// f = 32;
 	// n = 10000000;

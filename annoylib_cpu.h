@@ -1205,7 +1205,7 @@ public:
 
       thread_roots.push_back(_make_tree(indices, true, _random, threaded_build_policy));
       tree_count++;
-      printf("n trees built: %d / %d\n", tree_count + 1, q);      
+      printf("n trees built: %d / %d\n", tree_count, q);      
     }
 
     threaded_build_policy.lock_roots();

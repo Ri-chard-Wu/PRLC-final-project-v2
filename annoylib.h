@@ -1125,6 +1125,9 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
+
+// two_means<S, T, Random>(indexArray, sz, vecArray, f, random, true, p, q);
+
 template<typename S, typename T, typename Random>
 __device__
 void two_means(S *indexArray, int sz, T *vecArray, int f, 
@@ -1137,29 +1140,8 @@ void two_means(S *indexArray, int sz, T *vecArray, int f,
   size_t j = random.index(count-1);
   j += (j >= i); // ensure that i != j
 
-
-  // T sum = 0;
-  // for(int i = 0; i < f; i++){
-  //   sum += vecArray[f + i];
-  // }
-  // printf("vecArray + 3 * f sum: %f\n", sum);
-
   copy_vec<T>(p, vecArray + indexArray[i] * f, f);
   copy_vec<T>(q, vecArray + indexArray[j] * f, f);
-
-  // T sum = 0;
-  // for(int i = 0; i < f; i++){
-  //   sum += p[i];
-  // }
-  // printf("p sum: %f\n", sum);
-
-  // sum = 0;
-  // for(int i = 0; i < f; i++){
-  //   sum += q[i];
-  // }
-  // printf("q sum: %f\n", sum);
-        
-    
 
   if (cosine) { // yes
     normalize<T>(p, f); 
@@ -1186,20 +1168,20 @@ void two_means(S *indexArray, int sz, T *vecArray, int f,
       
       for (int z = 0; z < f; z++)
         p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
-     
       ic++;
     } 
     else if (dj < di) {
       
       for (int z = 0; z < f; z++)
         q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
-      
       jc++;
     }
   }
 
 }
 
+
+// create_split(indexArray_local, sz, vecArray, f, _random, p_sm, q_sm, splitVec_sm);
 
 template<typename S, typename T, typename Random>
 __device__
@@ -1277,17 +1259,18 @@ struct Group{
 
 
 
+    // kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, 
+    //         3 * _f * sizeof(T) + 3 * sizeof(int)>>>(indexArray_dev, vecArray_dev,
+    //          _f, _K, groupArray_dev, groupArray_next_dev,
+    //           n_group, splitVecArray_dev, sideArray_dev, sideCountArray_dev);
+
 template<typename S, typename T, typename Random>
-__global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *groupArray, 
+__global__ void kernel_split(int randomSeedb_base, S *indexArray, T *vecArray, int f, S K, Group *groupArray, 
                   Group *groupArray_next, int n_group, T *splitVecArray,
                   int *sideArray, int *sideCountArray){
 
 
   int bid_x = blockIdx.x; 
-  // printf("bid_x: %d\n", bid_x);
-  // printf("groupArray[0].pos: %d\n", groupArray[0].pos);
-  // printf("groupArray[0].sz: %d\n", groupArray[0].sz);
-
 
   if(groupArray[bid_x].sz <= K){
 
@@ -1302,7 +1285,6 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
 
     return;
   } 
-
   
 
   int gid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1313,11 +1295,10 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
   int offset = groupArray[bid_x].pos;
   int sz = groupArray[bid_x].sz;
 
-  Random _random(Random::default_seed + gid + n_group);
+  Random _random(randomSeedb_base + Random::default_seed + gid + n_group);
 
   S *indexArray_local = indexArray + offset;
   int *sideArray_local = sideArray + offset;
-  // T *vecArray_local = vecArray + f * offset;
 
   extern __shared__ T sm[];
   T *splitVec_sm = sm;
@@ -1336,7 +1317,6 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
   
     if(tid == 0){
       create_split(indexArray_local, sz, vecArray, f, _random, p_sm, q_sm, splitVec_sm);
-
     }    
 
     __syncthreads();
@@ -1386,10 +1366,6 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
     }
   }
 
-  // if(tid == 0){
-  //   printf("attempt: %d\n", attempt);
-  // }    
-
 
   if(tid == 0){
 
@@ -1416,30 +1392,18 @@ __global__ void kernel_split(S *indexArray, T *vecArray, int f, S K, Group *grou
 
 
     // returns
-
     groupArray_next[2 * bid_x].pos = offset;
     groupArray_next[2 * bid_x].sz = *nLeft_sm;
 
     groupArray_next[2 * bid_x + 1].pos = offset + *nLeft_sm;
     groupArray_next[2 * bid_x + 1].sz = *nRight_sm;
 
-    // printf("[blk%d]: *nLeft_sm: %d\n", bid_x, *nLeft_sm);
-    // printf("[blk%d]: *nRight_sm: %d\n", bid_x, *nRight_sm);
-
     sideCountArray[2 * bid_x] = *nLeft_sm;
     sideCountArray[2 * bid_x + 1] = *nRight_sm;
-    
 
     for (int z = 0; z < f; z++){
       splitVecArray[f * bid_x + z] = splitVec_sm[z];
     }    
-
-    // T sum = 0;
-    // for(int i = 0; i < f; i++){
-    //   sum += splitVec_sm[i];
-    // }
-    // printf("splitVec_sm: %f\n", sum);
-        
   }
 }
 
@@ -1479,14 +1443,9 @@ public:
 
 
 
-
   AnnoyIndex_GPU(int f): AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>(f){
     // Random _random(_seed + thread_idx);
   }
-
-
-
-
 
 
 
@@ -1506,6 +1465,7 @@ public:
         vecArray_host[i * _f + z] = node->v[z];
       }
     }
+
     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
                     _n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
 
@@ -1554,7 +1514,7 @@ public:
     // printf("n_group: %d\n", n_group);
 
     kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, 
-            3 * _f * sizeof(T) + 3 * sizeof(int)>>>(indexArray_dev, vecArray_dev,
+            3 * _f * sizeof(T) + 3 * sizeof(int)>>>(_n_nodes, indexArray_dev, vecArray_dev,
              _f, _K, groupArray_dev, groupArray_next_dev,
               n_group, splitVecArray_dev, sideArray_dev, sideCountArray_dev);
 
@@ -1608,12 +1568,14 @@ public:
         childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);
       }
 
-      Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) - offsetof(Node, children));
       
       if(sideCountArray[2 * group_i] >= 0){ 
+        Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) - offsetof(Node, children));
         memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T)); // v
       }
     }
+
+
 
     // printf("done_count: %d\n", done_count);
     // printf("n_group: %d\n", n_group);
@@ -1671,7 +1633,7 @@ public:
         S item = _n_nodes++;
         Node* m = this->_get(item);
         m->n_descendants = (S)sz;
-        memcpy(m->children, &indexArray[offset], sz * sizeof(S));     
+        memcpy(m->children, indexArray + offset, sz * sizeof(S));     
         *(childPtrArray[i]) = item;   
       }
 
@@ -1699,7 +1661,7 @@ public:
     S item = _n_nodes++;
     Node* m = this->_get(item); 
     m->n_descendants = _n_items; 
-    m->children[0] = 0;
+    // m->children[0] = 0;
 
 
 
@@ -1764,8 +1726,6 @@ public:
         cudaFree(groupArray_dev);
       }
       else {
-        // cudaFree(groupArray_next_dev);
-
         cudaFree(groupArray_dev);
         groupArray_dev = groupArray_next_dev;
         

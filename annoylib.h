@@ -561,9 +561,11 @@ public:
     }
 
 
-#ifdef MAP_POPULATE
+#ifdef MAP_POPULATE // yes
+    // printf("MAP_POPULATE yes\n");
     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
 #else
+    // printf("MAP_POPULATE no\n");
     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
 #endif
     return true;
@@ -635,13 +637,18 @@ public:
   }
 
   bool save(const char* filename, bool prefault=false, char** error=NULL) {
+    
     if (!_built) {
       set_error_from_string(error, "You can't save an index that hasn't been built");
       return false;
     }
+    
+    
     if (_on_disk) {
       return true;
-    } else {
+    } 
+    else {
+
       // Delete file if it already exists (See issue #335)
       unlink(filename);
 
@@ -664,7 +671,10 @@ public:
       unload();
       return load(filename, prefault, error);
     }
+
   }
+
+
 
   void reinitialize() {
     _fd = 0;
@@ -696,58 +706,168 @@ public:
     if (_verbose) annoylib_showUpdate("unloaded\n");
   }
 
-  bool load(const char* filename, bool prefault=false, char** error=NULL) {
+
+
+  bool load(const char* filename, bool prefault=false, char** error=NULL){
+    
     _fd = open(filename, O_RDONLY, (int)0400);
     if (_fd == -1) {
       set_error_from_errno(error, "Unable to open");
       _fd = 0;
       return false;
     }
+
     off_t size = lseek_getsize(_fd);
+   
     if (size == -1) {
       set_error_from_errno(error, "Unable to get size");
       return false;
-    } else if (size == 0) {
+    } 
+    else if (size == 0) {
       set_error_from_errno(error, "Size of file is zero");
       return false;
-    } else if (size % _s) {
+    } 
+    else if (size % _s) {
       // Something is fishy with this index!
       set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
       return false;
     }
 
     int flags = MAP_SHARED;
-    if (prefault) {
+    if (prefault) { // no
 #ifdef MAP_POPULATE
       flags |= MAP_POPULATE;
 #else
       annoylib_showUpdate("prefault is set to true, but MAP_POPULATE is not defined on this platform");
 #endif
     }
+
     _nodes = (Node*)mmap(0, size, PROT_READ, flags, _fd, 0);
     _n_nodes = (S)(size / _s);
 
+   
     // Find the roots by scanning the end of the file and taking the nodes with most descendants
     _roots.clear();
     S m = -1;
+
     for (S i = _n_nodes - 1; i >= 0; i--) {
+      
       S k = _get(i)->n_descendants;
+      
       if (m == -1 || k == m) {
         _roots.push_back(i);
         m = k;
-      } else {
+      } 
+      else {
         break;
       }
+
     }
+    
     // hacky fix: since the last root precedes the copy of all roots, delete it
     if (_roots.size() > 1 && _get(_roots.front())->children[0] == _get(_roots.back())->children[0])
-      _roots.pop_back();
+
+    _roots.pop_back();
     _loaded = true;
     _built = true;
     _n_items = m;
+
     if (_verbose) annoylib_showUpdate("found %lu roots with degree %d\n", _roots.size(), m);
+
     return true;
   }
+
+
+
+
+
+
+//     _on_disk = true;
+//     _fd = open(file, O_RDWR | O_CREAT | O_TRUNC, (int) 0600);
+
+//     if (_fd == -1) {
+//       set_error_from_errno(error, "Unable to open");
+//       _fd = 0;
+//       return false;
+//     }
+
+//     _nodes_size = 1;
+//     if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
+//       set_error_from_errno(error, "Unable to truncate");
+//       return false;
+//     }
+
+
+// #ifdef MAP_POPULATE // yes
+//     // printf("MAP_POPULATE yes\n");
+//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
+// #else
+//     // printf("MAP_POPULATE no\n");
+//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
+// #endif
+
+
+
+
+  bool load_items(const char* filename, char** error=NULL){
+    
+    // _fd = open(filename, O_RDONLY, (int)0400);
+    _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
+
+    if (_fd == -1) {
+      set_error_from_errno(error, "Unable to open");
+      _fd = 0;
+      return false;
+    }
+
+  
+    off_t size = lseek_getsize(_fd);
+   
+    if (size == -1) {
+      set_error_from_errno(error, "Unable to get size");
+      return false;
+    } 
+    else if (size == 0) {
+      set_error_from_errno(error, "Size of file is zero");
+      return false;
+    } 
+    else if (size % _s) {
+      // Something is fishy with this index!
+      set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
+      return false;
+    }
+
+    _n_nodes = (S)(size / _s);
+
+    // _nodes = (Node*)mmap(0, size, PROT_READ, MAP_SHARED, _fd, 0);
+    // _n_nodes = (S)(size / _s);
+
+    _loaded = false;
+    _n_items = _n_nodes;
+    // _n_nodes = 0;
+    _nodes_size = _n_nodes;
+    _on_disk = true;
+    // _seed = Random::default_seed;
+    // _roots.clear();
+
+
+    if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
+      set_error_from_errno(error, "Unable to truncate");
+      return false;
+    }
+
+#ifdef MAP_POPULATE // yes
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
+#else
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
+#endif
+
+    return true;
+  }
+
+
+
+
 
   T get_distance(S i, S j) const {
     return D::normalized_distance(D::distance(_get(i), _get(j), _f));
@@ -1687,6 +1807,10 @@ public:
 
   void pipeline_LaunchAsync(){
 
+
+    
+
+
     splitVecArray = new T[_f * kd->n_group];
     sideCountArray = new int[2 * kd->n_group];
 
@@ -1703,35 +1827,56 @@ public:
     cudaMemcpy((BYTE *)kd_dev, (BYTE *)kd, sizeof(KernelData), 
                                                   cudaMemcpyHostToDevice);
 
+    // auto start = std::chrono::high_resolution_clock::now();
+
     kernel_split<S, T, D, Random><<<
         n_blocks, n_threads_per_block, sm_size, stream>>>(kd_dev);
 
-    // cudaStreamSynchronize(stream);   
+    cudaStreamSynchronize(stream);   
+
+    // auto stop = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    // std::cout<<"pipeline_LaunchAsync() time: "<<duration.count()<<" us"<< std::endl;
   }
 
 
   void pipeline_postLaunchCopyAsync(){
 
+
+    // auto start = std::chrono::high_resolution_clock::now();
+
     cudaFree(kd_dev);
 
-    cudaMemcpyAsync((BYTE *)splitVecArray, (BYTE *)(kd->splitVecArray), 
+    // cudaMemcpyAsync((BYTE *)splitVecArray, (BYTE *)(kd->splitVecArray), 
+    //                 kd->n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
+
+    // cudaMemcpyAsync((BYTE *)sideCountArray, (BYTE *)(kd->sideCountArray), 
+    //                 kd->n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy((BYTE *)splitVecArray, (BYTE *)(kd->splitVecArray), 
                     kd->n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
 
-    cudaMemcpyAsync((BYTE *)sideCountArray, (BYTE *)(kd->sideCountArray), 
+    cudaMemcpy((BYTE *)sideCountArray, (BYTE *)(kd->sideCountArray), 
                     kd->n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
+
 
     cudaEventRecord(event_asyncCopy, stream);
 
-
     cudaFree(kd->splitVecArray);
     cudaFree(kd->sideCountArray);
+
+    // auto stop = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    // std::cout<<"pipeline_postLaunchCopyAsync() time: "
+    //          <<duration.count()<<" us"<< std::endl;
+
   }
 
 
   // can set done.
   void pipeline_postLaunchUpdateSync(){
 
-    // printf("[pipeline_postLaunchUpdateSync()]\n");
+    // auto start = std::chrono::high_resolution_clock::now();
 
     updateTreeInternalNode();
 
@@ -1741,6 +1886,10 @@ public:
     kd->n_group = kd->n_group * 2;
     cudaFree(kd->groupArray);
     kd->groupArray = kd->groupArray_next;
+
+    // auto stop = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    // std::cout<<"pipeline_postLaunchUpdateSync() time: "<<duration.count()<<" us"<< std::endl;
   }
 
 
@@ -2036,6 +2185,8 @@ public:
 
   void thread_build(int n_tree, int thread_idx) {
 
+
+
     T *vecArray_dev;
     cudaMalloc_vecArray(vecArray_dev);
 
@@ -2049,6 +2200,8 @@ public:
       while(!gb->is_done()){
 
         gb->one_step(); 
+
+
         gb->wait();  
       }
 

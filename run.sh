@@ -8,6 +8,7 @@
 
 # clear
 rm main
+rm AnnoyGPU.tree
 # rm compile.log
 nvcc -o main main.cu #2> compile.log
 # code compile.log

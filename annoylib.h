@@ -793,62 +793,62 @@ public:
   }
 
   
+  virtual void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) = 0;
 
 
+  // void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) {
+  //   // Each thread needs its own seed, otherwise each thread would be building the same tree(s)
+  //   Random _random(_seed + thread_idx);
 
-  void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) {
-    // Each thread needs its own seed, otherwise each thread would be building the same tree(s)
-    Random _random(_seed + thread_idx);
-
-    // S: int
-    vector<S> thread_roots;
+  //   // S: int
+  //   vector<S> thread_roots;
 
 
-    // int tree_id = 0;
-    int tree_count = 0;
-    while (1) {
+  //   // int tree_id = 0;
+  //   int tree_count = 0;
+  //   while (1) {
 
-      if (q == -1) {
+  //     if (q == -1) {
        
-        threaded_build_policy.lock_n_nodes();
+  //       threaded_build_policy.lock_n_nodes();
         
-        if (_n_nodes >= 2 * _n_items) {
-          threaded_build_policy.unlock_n_nodes();
-          break;
-        }
-        threaded_build_policy.unlock_n_nodes();
-      } 
-      else {
+  //       if (_n_nodes >= 2 * _n_items) {
+  //         threaded_build_policy.unlock_n_nodes();
+  //         break;
+  //       }
+  //       threaded_build_policy.unlock_n_nodes();
+  //     } 
+  //     else {
 
-        if (thread_roots.size() >= (size_t)q) {
-          break;
-        }
-      }
+  //       if (thread_roots.size() >= (size_t)q) {
+  //         break;
+  //       }
+  //     }
 
-      if (_verbose) annoylib_showUpdate("pass %zd...\n", thread_roots.size());
-
-
-      S *indices = new S[_n_items];
-
-      for (S i = 0; i < _n_items; i++) {
-        if (_get(i)->n_descendants >= 1) { // Issue #223
-          indices[i] = i;
-        }
-      }
-
-      thread_roots.push_back(_make_tree(indices));
-      tree_count++;
-      printf("n trees built: %d / %d\n", tree_count, q);
-
-      delete [] indices;
-
-    }
+  //     if (_verbose) annoylib_showUpdate("pass %zd...\n", thread_roots.size());
 
 
-    threaded_build_policy.lock_roots();
-    _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
-    threaded_build_policy.unlock_roots();
-  }
+  //     S *indices = new S[_n_items];
+
+  //     for (S i = 0; i < _n_items; i++) {
+  //       if (_get(i)->n_descendants >= 1) { // Issue #223
+  //         indices[i] = i;
+  //       }
+  //     }
+
+  //     thread_roots.push_back(_make_tree(indices));
+  //     tree_count++;
+  //     printf("n trees built: %d / %d\n", tree_count, q);
+
+  //     delete [] indices;
+
+  //   }
+
+
+  //   threaded_build_policy.lock_roots();
+  //   _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
+  //   threaded_build_policy.unlock_roots();
+  // }
 
 
   void _reallocate_nodes(S n) {
@@ -913,7 +913,8 @@ public:
 
 
 
-  virtual S _make_tree(S *indices) = 0;
+  virtual S _make_tree(S *indexArray, T *vecArray_dev) = 0;
+  // S _make_tree(S *indexArray, T *vecArray_dev)
 
 
   void _get_all_nns(const T* v, size_t n, int search_k, vector<S>* result,
@@ -1448,10 +1449,7 @@ public:
   }
 
 
-
-  void hostPreKernel_split(S *&indexArray, S *&indexArray_dev, T *&vecArray_dev, 
-                                      int *&sideArray_dev, Group *&groupArray_dev){
-
+  void cudaMalloc_vecArray(S *&indexArray, T *&vecArray_dev){
 
     T *vecArray_host;
     cudaMalloc(&vecArray_dev, _n_items * _f * sizeof(T));
@@ -1470,6 +1468,31 @@ public:
                     _n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
 
     delete [] vecArray_host;
+
+  }
+  
+
+  void hostPreKernel_split(S *&indexArray, S *&indexArray_dev, 
+                                      int *&sideArray_dev, Group *&groupArray_dev){
+
+
+    // T *vecArray_host;
+    // cudaMalloc(&vecArray_dev, _n_items * _f * sizeof(T));
+    // vecArray_host = new T[_n_items * _f];
+ 
+    // for(int i = 0; i < _n_items; i++){
+
+    //   Node *node = this->_get(indexArray[i]);
+      
+    //   for(int z = 0; z < _f; z++){
+    //     vecArray_host[i * _f + z] = node->v[z];
+    //   }
+    // }
+
+    // cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
+    //                 _n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
+
+    // delete [] vecArray_host;
 
     // --------------------------------
 
@@ -1653,8 +1676,70 @@ public:
     printf("\n");
   }
 
-                                                        
-  S _make_tree(S *indexArray) {
+
+
+
+
+
+  void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) {
+
+    vector<S> thread_roots;
+
+    S *indexArray = new S[_n_items];
+    for (S i = 0; i < _n_items; i++) {
+      if (this->_get(i)->n_descendants >= 1) { // Issue #223
+        indexArray[i] = i;
+      }
+    }
+
+    T *vecArray_dev;
+    cudaMalloc_vecArray(indexArray, vecArray_dev);
+
+    int tree_count = 0;
+    while (1) {
+
+      if (q == -1) {
+        if (_n_nodes >= 2 * _n_items) break;
+      } 
+      else {
+        if (thread_roots.size() >= (size_t)q) break;
+      }
+
+
+      // S *indexArray = new S[_n_items];
+
+      // for (S i = 0; i < _n_items; i++) {
+      //   if (this->_get(i)->n_descendants >= 1) { // Issue #223
+      //     indexArray[i] = i;
+      //   }
+      // }
+
+      thread_roots.push_back(_make_tree(indexArray, vecArray_dev));
+
+      tree_count++;
+      printf("n trees built: %d / %d\n", tree_count, q);
+
+      
+      // delete [] indexArray;
+
+      for (S i = 0; i < _n_items; i++) {
+        if (this->_get(i)->n_descendants >= 1) { // Issue #223
+          indexArray[i] = i;
+        }
+      }
+    }
+
+    cudaFree(vecArray_dev);
+
+
+    _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
+  }
+
+
+
+
+
+  S _make_tree(S *indexArray, T *vecArray_dev) {
 
 
     this->_allocate_size(_n_nodes + 1);
@@ -1676,12 +1761,12 @@ public:
     }
 
 
-    T *vecArray_dev;
+    // T *vecArray_dev;
     S *indexArray_dev;
     int *sideArray_dev;
     Group *groupArray_dev, *groupArray_next_dev;
 
-    hostPreKernel_split(indexArray, indexArray_dev, vecArray_dev, sideArray_dev, 
+    hostPreKernel_split(indexArray, indexArray_dev, sideArray_dev, 
                               groupArray_next_dev);
                              
 
@@ -1742,7 +1827,7 @@ public:
     
     copy_leaf_node(indexArray, groupArray, childPtrArray, n_group);
     
-    cudaFree(vecArray_dev);
+    // cudaFree(vecArray_dev);
     cudaFree(indexArray_dev);
     cudaFree(sideArray_dev);
     cudaFree(groupArray_dev);

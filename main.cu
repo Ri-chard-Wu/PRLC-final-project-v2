@@ -29,8 +29,7 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 	// 		AnnoyIndexSingleThreadedBuildPolicy>(f);
 
 
-	AnnoyIndex_GPU<int, float, Angular, Kiss32Random, \
-						AnnoyIndexSingleThreadedBuildPolicy> t(f);
+	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
 
 
 

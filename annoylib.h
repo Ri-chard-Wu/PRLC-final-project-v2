@@ -444,7 +444,7 @@ class AnnoyIndexInterface {
 
 
 
-template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
+template<typename S, typename T, typename Distance, typename Random>
   class AnnoyIndex : public AnnoyIndexInterface<S, T, 
 #if __cplusplus >= 201103L
     typename std::remove_const<decltype(Random::default_seed)>::type
@@ -587,7 +587,7 @@ public:
 
     _n_nodes = _n_items;
 
-    ThreadedBuildPolicy::template build<S, T>(this, q, n_threads);
+    thread_build(q, 0);
 
 
     // Also, copy the roots into the last segment of the array
@@ -793,62 +793,8 @@ public:
   }
 
   
-  virtual void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) = 0;
+  virtual void thread_build(int q, int thread_idx) = 0;
 
-
-  // void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) {
-  //   // Each thread needs its own seed, otherwise each thread would be building the same tree(s)
-  //   Random _random(_seed + thread_idx);
-
-  //   // S: int
-  //   vector<S> thread_roots;
-
-
-  //   // int tree_id = 0;
-  //   int tree_count = 0;
-  //   while (1) {
-
-  //     if (q == -1) {
-       
-  //       threaded_build_policy.lock_n_nodes();
-        
-  //       if (_n_nodes >= 2 * _n_items) {
-  //         threaded_build_policy.unlock_n_nodes();
-  //         break;
-  //       }
-  //       threaded_build_policy.unlock_n_nodes();
-  //     } 
-  //     else {
-
-  //       if (thread_roots.size() >= (size_t)q) {
-  //         break;
-  //       }
-  //     }
-
-  //     if (_verbose) annoylib_showUpdate("pass %zd...\n", thread_roots.size());
-
-
-  //     S *indices = new S[_n_items];
-
-  //     for (S i = 0; i < _n_items; i++) {
-  //       if (_get(i)->n_descendants >= 1) { // Issue #223
-  //         indices[i] = i;
-  //       }
-  //     }
-
-  //     thread_roots.push_back(_make_tree(indices));
-  //     tree_count++;
-  //     printf("n trees built: %d / %d\n", tree_count, q);
-
-  //     delete [] indices;
-
-  //   }
-
-
-  //   threaded_build_policy.lock_roots();
-  //   _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
-  //   threaded_build_policy.unlock_roots();
-  // }
 
 
   void _reallocate_nodes(S n) {
@@ -870,17 +816,10 @@ public:
     
     _nodes_size = new_nodes_size;
 
-    // if (_verbose) annoylib_showUpdate("Reallocating to %d nodes: old_address=%p, new_address=%p\n", new_nodes_size, old, _nodes);
   }
 
 
-  void _allocate_size(S n, ThreadedBuildPolicy& threaded_build_policy) {
-    if (n > _nodes_size) {
-      // threaded_build_policy.lock_nodes();
-      _reallocate_nodes(n);
-      // threaded_build_policy.unlock_nodes();
-    }
-  }
+
 
   void _allocate_size(S n) {
     if (n > _nodes_size) {
@@ -913,8 +852,7 @@ public:
 
 
 
-  virtual S _make_tree(S *indexArray, T *vecArray_dev) = 0;
-  // S _make_tree(S *indexArray, T *vecArray_dev)
+  // virtual S _make_tree(int n_tree, T *vecArray_dev) = 0;
 
 
   void _get_all_nns(const T* v, size_t n, int search_k, vector<S>* result,
@@ -1023,33 +961,6 @@ public:
   
 };
 
-
-
-class AnnoyIndexSingleThreadedBuildPolicy {
-public:
-
-  template<typename S, typename T, typename D, typename Random>
-  static void build(AnnoyIndex<S, T, D, Random, AnnoyIndexSingleThreadedBuildPolicy>* annoy, int q, int n_threads) {
-
-    AnnoyIndexSingleThreadedBuildPolicy threaded_build_policy;
-    annoy->thread_build(q, 0, threaded_build_policy);
-
-  }
-
-
-
-  void lock_n_nodes() {}
-  void unlock_n_nodes() {}
-
-  void lock_nodes() {}
-  void unlock_nodes() {}
-
-  void lock_shared_nodes() {}
-  void unlock_shared_nodes() {}
-
-  void lock_roots() {}
-  void unlock_roots() {}
-};
 
 
 
@@ -1267,21 +1178,29 @@ template<typename S, typename T>
 struct KernelData_split{
 
   KernelData_split(int n_nodes, int f, S K, int n_items,
-                     S *indexArray_host, T *vecArray): f(f), K(K), vecArray(vecArray){
+                      T *vecArray): f(f), K(K), vecArray(vecArray){
+
+    S *indexArray_host = new S[n_items];
+    for (S i = 0; i < n_items; i++) {
+      indexArray_host[i] = i;
+    }
 
     cudaMalloc(&indexArray, n_items * sizeof(S));
     cudaMemcpy((BYTE *)indexArray, (BYTE *)indexArray_host, 
                 n_items * sizeof(S), cudaMemcpyHostToDevice);
 
+    delete indexArray_host;
+    
+
 
     cudaMalloc(&sideArray, n_items * sizeof(int));  
 
 
-    cudaMalloc(&groupArray_next, 1 * sizeof(Group));
+    cudaMalloc(&groupArray, 1 * sizeof(Group));
     Group groupArray_tmp[1];
     groupArray_tmp[0].pos = 0;
     groupArray_tmp[0].sz = n_items;
-    cudaMemcpy((BYTE *)groupArray_next, (BYTE *)groupArray_tmp, 
+    cudaMemcpy((BYTE *)groupArray, (BYTE *)groupArray_tmp, 
                 1 * sizeof(Group), cudaMemcpyHostToDevice);
 
     n_group = 1;
@@ -1306,13 +1225,6 @@ struct KernelData_split{
 };
 
 
-
-
-// template<typename S, typename T, typename Random>
-// __global__ void kernel_split(int randomSeedb_base, S *indexArray, T *vecArray, int f, S K, 
-                      // Group *groupArray, 
-//                   Group *groupArray_next, int n_group, T *splitVecArray,
-//                   int *sideArray, int *sideCountArray){
 
 
 
@@ -1477,191 +1389,43 @@ __global__ void kernel_split(KernelData_split<S, T> *kd){
 
 
 
-// template<typename S, typename T, typename Random>
-// __global__ void kernel_split(int randomSeedb_base, S *indexArray, T *vecArray, int f, S K, Group *groupArray, 
-//                   Group *groupArray_next, int n_group, T *splitVecArray,
-//                   int *sideArray, int *sideCountArray){
-
-
-//   int bid_x = blockIdx.x; 
-
-//   if(groupArray[bid_x].sz <= K){
-
-//     groupArray_next[2 * bid_x + 0].pos = groupArray[bid_x].pos;
-//     groupArray_next[2 * bid_x + 0].sz = groupArray[bid_x].sz;
-
-//     groupArray_next[2 * bid_x + 1].pos = groupArray[bid_x].pos;
-//     groupArray_next[2 * bid_x + 1].sz = groupArray[bid_x].sz;
-
-//     sideCountArray[2 * bid_x + 0] = -1;
-//     sideCountArray[2 * bid_x + 1] = -1;
-
-//     return;
-//   } 
-  
-
-//   int gid = blockIdx.x * blockDim.x + threadIdx.x;
-//   int tid = threadIdx.x;
-
-//   // printf("tid = %d\n", tid);
-
-//   int offset = groupArray[bid_x].pos;
-//   int sz = groupArray[bid_x].sz;
-
-//   Random _random(randomSeedb_base + Random::default_seed + gid + n_group);
-
-//   S *indexArray_local = indexArray + offset;
-//   int *sideArray_local = sideArray + offset;
-
-//   extern __shared__ T sm[];
-//   T *splitVec_sm = sm;
-//   T *p_sm = sm + f;
-//   T *q_sm = sm + 2 * f;
-
-//   int *isBalanced_sm = (int *)(sm + 3 * f);
-//   int *nLeft_sm = isBalanced_sm + 1;
-//   int *nRight_sm = nLeft_sm + 1;
-  
-   
-//   int attempt;
-//   for (attempt = 0; attempt < 3; attempt++){
-
-//     *isBalanced_sm = 0;
-  
-//     if(tid == 0){
-//       create_split(indexArray_local, sz, vecArray, f, _random, p_sm, q_sm, splitVec_sm);
-//     }    
-
-//     __syncthreads();
-
-    
-
-//     int idx = tid;
-
-//     while(idx < sz){
-
-//       S item = indexArray_local[idx];
-//       T dot = 0.;
-
-//       for(int i = 0; i < f; i++){
-        
-//         dot += (vecArray + item * f)[i] * splitVec_sm[i];
-//       }
-
-//       if(dot != 0) sideArray_local[idx] = (int)(dot > 0);
-//       else sideArray_local[idx] = _random.flip();
-      
-//       idx += blockDim.x;
-//     }
-
-//     __syncthreads();
-
-
-//     if(tid == 0){
-
-//       group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-
-//       if (_split_imbalance(*nLeft_sm, *nRight_sm) < 0.95) {
-//         *isBalanced_sm = 1;
-//       }      
-//     } 
-
-//     __syncthreads();
-
-//     if(*isBalanced_sm) {
-
-//       if(tid == 0){
-//         group_moveSide(indexArray_local, sideArray_local, sz);                
-//       }
-//       __syncthreads();
-      
-//       break;
-//     }
-//   }
-
-
-//   if(tid == 0){
-
-//     if(_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99){
-
-//       for (int z = 0; z < f; z++){
-        
-//         splitVec_sm[z] = 0;
-//       }    
-
-//       while (_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99) {
-
-//         for(int j = 0; j < sz; j++){
-//           sideArray_local[j] = _random.flip();
-//         }
-
-//         group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-//       }
-
-//       group_moveSide(indexArray_local, sideArray_local, sz);
-//     }
-
-
-
-
-//     // returns
-//     groupArray_next[2 * bid_x].pos = offset;
-//     groupArray_next[2 * bid_x].sz = *nLeft_sm;
-
-//     groupArray_next[2 * bid_x + 1].pos = offset + *nLeft_sm;
-//     groupArray_next[2 * bid_x + 1].sz = *nRight_sm;
-
-//     sideCountArray[2 * bid_x] = *nLeft_sm;
-//     sideCountArray[2 * bid_x + 1] = *nRight_sm;
-
-//     for (int z = 0; z < f; z++){
-//       splitVecArray[f * bid_x + z] = splitVec_sm[z];
-//     }    
-//   }
-// }
-
-
-
-
-template<typename S, typename T, typename Distance, typename Random, class ThreadedBuildPolicy>
-class AnnoyIndex_GPU: public AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>{
+template<typename S, typename T, typename Distance, typename Random>
+class AnnoyIndex_GPU: public AnnoyIndex<S, T, Distance, Random>{
 
 public:
 
-  // typedef Distance D;
-  // typedef typename D::template Node<S, T> Node;
 
   typedef Distance D;
   typedef typename D::template Node<S, T> Node;
-  // using typename AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::D;
-  // using typename AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::Node;
-  using typename AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::R;
 
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_f;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_s; 
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_n_items;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_nodes; 
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_n_nodes;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_nodes_size;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_roots;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_K;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_seed;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_loaded;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_verbose;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_fd;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_on_disk;
-  using AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>::_built;
+
+  using typename AnnoyIndex<S, T, Distance, Random>::R;
+
+  using AnnoyIndex<S, T, Distance, Random>::_f;
+  using AnnoyIndex<S, T, Distance, Random>::_s; 
+  using AnnoyIndex<S, T, Distance, Random>::_n_items;
+  using AnnoyIndex<S, T, Distance, Random>::_nodes; 
+  using AnnoyIndex<S, T, Distance, Random>::_n_nodes;
+  using AnnoyIndex<S, T, Distance, Random>::_nodes_size;
+  using AnnoyIndex<S, T, Distance, Random>::_roots;
+  using AnnoyIndex<S, T, Distance, Random>::_K;
+  using AnnoyIndex<S, T, Distance, Random>::_seed;
+  using AnnoyIndex<S, T, Distance, Random>::_loaded;
+  using AnnoyIndex<S, T, Distance, Random>::_verbose;
+  using AnnoyIndex<S, T, Distance, Random>::_fd;
+  using AnnoyIndex<S, T, Distance, Random>::_on_disk;
+  using AnnoyIndex<S, T, Distance, Random>::_built;
   Random _random;
 
 
 
 
-  AnnoyIndex_GPU(int f): AnnoyIndex<S, T, Distance, Random, ThreadedBuildPolicy>(f){
+  AnnoyIndex_GPU(int f): AnnoyIndex<S, T, Distance, Random>(f){
     // Random _random(_seed + thread_idx);
   }
 
 
-  void cudaMalloc_vecArray(S *&indexArray, T *&vecArray_dev){
+  void cudaMalloc_vecArray(T *&vecArray_dev){
 
     T *vecArray_host;
     cudaMalloc(&vecArray_dev, _n_items * _f * sizeof(T));
@@ -1669,7 +1433,7 @@ public:
  
     for(int i = 0; i < _n_items; i++){
 
-      Node *node = this->_get(indexArray[i]);
+      Node *node = this->_get(i);
       
       for(int z = 0; z < _f; z++){
         vecArray_host[i * _f + z] = node->v[z];
@@ -1686,40 +1450,6 @@ public:
 
 
 
-  // void launchKernel_split(S *&indexArray_dev, T *&vecArray_dev, Group *&groupArray_dev,
-  //                           Group *&groupArray_next_dev, int n_group, T *&splitVecArray, 
-  //                           int *&sideArray_dev, int *&sideCountArray){
-
-  //   T *splitVecArray_dev;
-  //   cudaMalloc(&splitVecArray_dev, n_group * _f * sizeof(T));
-
-  //   int *sideCountArray_dev;
-  //   cudaMalloc(&sideCountArray_dev, n_group * 2 * sizeof(int));
-
-  //   int n_blocks = n_group;
-  //   int n_threads_per_block = 128;
-
-
-
-
-  //   kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, 
-  //           3 * _f * sizeof(T) + 3 * sizeof(int)>>>(_n_nodes, indexArray_dev, vecArray_dev,
-  //            _f, _K, groupArray_dev, groupArray_next_dev,
-  //             n_group, splitVecArray_dev, sideArray_dev, sideCountArray_dev);
-
-
-  //   cudaMemcpy((BYTE *)splitVecArray, (BYTE *)splitVecArray_dev, 
-  //                   n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
-
-  //   cudaMemcpy((BYTE *)sideCountArray, (BYTE *)sideCountArray_dev, 
-  //                   n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
-
-  //   cudaFree(splitVecArray_dev);
-  //   cudaFree(sideCountArray_dev);
-  // }
-
-
-
 
 
   void launchKernel_split(KernelData_split<S, T> *kd, T *&splitVecArray, int *&sideCountArray){
@@ -1728,10 +1458,13 @@ public:
     cudaMalloc(&(kd->splitVecArray), kd->n_group * _f * sizeof(T));
     cudaMalloc(&(kd->sideCountArray), kd->n_group * 2 * sizeof(int));
 
+
+    // --------------------------------------------------
+
+
     int n_blocks = kd->n_group;
     int n_threads_per_block = 128;
     int sm_size = 3 * _f * sizeof(T) + 3 * sizeof(int);
-
 
     KernelData_split<S, T> *kd_dev;
     cudaMalloc(&kd_dev, sizeof(KernelData_split<S, T>));
@@ -1739,9 +1472,11 @@ public:
 
     kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, sm_size>>>(kd_dev);
 
+
+    // --------------------------------------------------
+
+
     cudaFree(kd_dev);
-
-
 
     cudaMemcpy((BYTE *)splitVecArray, (BYTE *)(kd->splitVecArray), 
                     kd->n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
@@ -1816,9 +1551,9 @@ public:
 
   void copy_leaf_node(S *&indexArray, Group *&groupArray, S **&childPtrArray, int n_group){
 
-    for(int i = 0; i < 2 * n_group; ){
+    for(int i = 0; i < n_group; ){
 
-      while(i + 1 <= 2 * n_group - 1){
+      while(i + 1 <= n_group - 1){
 
         if(childPtrArray[i + 1] == childPtrArray[i]){
           i++;
@@ -1866,44 +1601,91 @@ public:
 
 
 
-  void thread_build(int q, int thread_idx, ThreadedBuildPolicy& threaded_build_policy) {
-
-    vector<S> thread_roots;
-
-    S *indexArray = new S[_n_items];
-    for (S i = 0; i < _n_items; i++) {
-      if (this->_get(i)->n_descendants >= 1) { // Issue #223
-        indexArray[i] = i;
-      }
-    }
+  void thread_build(int n_tree, int thread_idx) {
 
     T *vecArray_dev;
-    cudaMalloc_vecArray(indexArray, vecArray_dev);
+    cudaMalloc_vecArray(vecArray_dev);
 
 
-    int tree_count = 0;
-    while (1) {
+    for(int tree_i = 0; tree_i < n_tree; tree_i++){
 
-      if (q == -1) {
-        if (_n_nodes >= 2 * _n_items) break;
-      } 
-      else {
-        if (thread_roots.size() >= (size_t)q) break;
-      }
 
-      thread_roots.push_back(_make_tree(indexArray, vecArray_dev));
 
-      tree_count++;
-      printf("n trees built: %d / %d\n", tree_count, q);
+      this->_allocate_size(_n_nodes + 1);
+      S item = _n_nodes++;
+      Node* m = this->_get(item); 
+      m->n_descendants = _n_items; 
 
-      for (S i = 0; i < _n_items; i++) {
-        if (this->_get(i)->n_descendants >= 1) { // Issue #223
-          indexArray[i] = i;
+
+      if (_n_items <= (size_t)_K) {
+        
+        if (_n_items != 0){  
+
+          S *indexArray = new S[_n_items];
+          for (S i = 0; i < _n_items; i++) {
+            indexArray[i] = i;
+          }
+          memcpy(m->children, indexArray, _n_items * sizeof(S));
+          delete indexArray;
         }
+
+        _roots.push_back(item);
+        continue;
       }
+
+
+
+      KernelData_split<S, T> *kd = new KernelData_split<S, T>(
+                _n_nodes, _f, _K, _n_items, vecArray_dev);
+
+      S **childPtrArray = new S*[2 * kd->n_group];
+      childPtrArray[0] = &(m->children[0]);
+      childPtrArray[1] = &(m->children[1]);
+      
+      bool done = false;
+
+
+      // -------------------------
+
+      while(!done){
+      
+        T *splitVecArray = new T[_f * kd->n_group];
+        int *sideCountArray = new int[2 * kd->n_group];
+
+        cudaMalloc(&(kd->groupArray_next), kd->n_group * 2 * sizeof(Group));
+
+        launchKernel_split(kd, splitVecArray, sideCountArray); 
+
+        hostPostKernel_split(childPtrArray, splitVecArray, sideCountArray, kd->n_group, done);
+
+        delete [] splitVecArray;
+        delete [] sideCountArray;
+
+        kd->n_group = kd->n_group * 2;
+        cudaFree(kd->groupArray);
+        kd->groupArray = kd->groupArray_next;
+      }
+
+      S *indexArray = new S[_n_items];
+      cudaMemcpy((BYTE *)indexArray, (BYTE *)(kd->indexArray), 
+                  _n_items * sizeof(S), cudaMemcpyDeviceToHost);
+            
+      Group *groupArray = new Group[kd->n_group];
+      cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
+                  kd->n_group * sizeof(Group), cudaMemcpyDeviceToHost);
+      
+      copy_leaf_node(indexArray, groupArray, childPtrArray, kd->n_group);
+      
+      cudaFree(kd->indexArray);
+      cudaFree(kd->sideArray);
+      cudaFree(kd->groupArray);
+
+      delete [] groupArray;
+      delete kd;
+      
+      _roots.push_back(item);
     }
 
-    _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
 
     cudaFree(vecArray_dev);
   }
@@ -1913,188 +1695,301 @@ public:
 
 
 
+  void thread_build(int n_tree, int thread_idx) {
+
+    T *vecArray_dev;
+    cudaMalloc_vecArray(vecArray_dev);
+
+    int n_stream = 3;
+    for(int i = 0; i < n_tree; i += n_stream){
+      
+      GPUStreamBuilder *gb;
+      for(int j = 0; j < n_stream; j++){
+        gb[j] = new GPUStreamBuilder<S, T, D, Random>(this, vecArray_dev);
+      }
+
+    }
+
+
+    cudaFree(vecArray_dev);
+  }
+
+
+};
 
 
 
 
-  S _make_tree(S *indexArray, T *vecArray_dev) {
 
-    this->_allocate_size(_n_nodes + 1);
-    S item = _n_nodes++;
-    Node* m = this->_get(item); 
+
+
+template<typename S, typename T, typename D, typename Random>
+class GPUStreamBuilder{
+
+public:
+
+  typedef typename D::template Node<S, T> Node;
+
+  template<typename S, typename T>
+  struct KernelData{
+
+    KernelData(int n_nodes, int f, S K, int n_items,
+                        T *vecArray): f(f), K(K), vecArray(vecArray){
+
+      S *indexArray_host = new S[n_items];
+      for (S i = 0; i < n_items; i++) {
+        indexArray_host[i] = i;
+      }
+
+      cudaMalloc(&indexArray, n_items * sizeof(S));
+      cudaMemcpy((BYTE *)indexArray, (BYTE *)indexArray_host, 
+                  n_items * sizeof(S), cudaMemcpyHostToDevice);
+
+      delete indexArray_host;
+      
+
+
+      cudaMalloc(&sideArray, n_items * sizeof(int));  
+
+
+      cudaMalloc(&groupArray, 1 * sizeof(Group));
+      Group groupArray_tmp[1];
+      groupArray_tmp[0].pos = 0;
+      groupArray_tmp[0].sz = n_items;
+      cudaMemcpy((BYTE *)groupArray, (BYTE *)groupArray_tmp, 
+                  1 * sizeof(Group), cudaMemcpyHostToDevice);
+
+      n_group = 1;
+    }
+
+    int n_nodes;
+    
+    int f;
+    S K;
+
+    S *indexArray;
+    T *vecArray;
+
+    int *sideArray;
+
+    int n_group;
+    Group *groupArray;
+    Group *groupArray_next;
+
+    T *splitVecArray;
+    int *sideCountArray;
+  };
+
+
+
+
+  GPUStreamBuilder(AnnoyIndex_GPU<S, T, D, Random> *annoy, T *vecArray_dev){
+
+    int _n_items = annoy->_n_items;
+    _f = annoy->_f;
+    _K = annoy->K;
+
+    indexArray = new S[_n_items];
+    for (S i = 0; i < _n_items; i++) {
+      indexArray[i] = i;
+    }
+    
+    
+    annoy->_allocate_size(annoy->_n_nodes + 1);
+    S item = annoy->_n_nodes++;
+    Node* m = annoy->_get(item); 
     m->n_descendants = _n_items; 
 
     if (_n_items <= (size_t)_K) {
-      
-      if (_n_items != 0){   
-        memcpy(m->children, indexArray, _n_items * sizeof(S));
-        delete [] indexArray;
-      }
-      return item;
+      memcpy(m->children, indexArray, _n_items * sizeof(S));
+      annoy->_roots.push_back(item);
+      done = true;
     }
 
-
-    KernelData_split<S, T> *kd = new KernelData_split<S, T>(
-              _n_nodes, _f, _K, _n_items, indexArray, vecArray_dev);
-
-    bool done = false;
+    kd = new KernelData<S, T>(annoy->_n_nodes, _f, _K, _n_items, vecArray_dev);
 
     S **childPtrArray = new S*[2 * kd->n_group];
-
     childPtrArray[0] = &(m->children[0]);
     childPtrArray[1] = &(m->children[1]);
     
+  }
+
+
+  bool is_done(){
+    return done;
+  }
+
+
+  void loop_preLaunch(){
+
+    splitVecArray = new T[_f * kd->n_group];
+    sideCountArray = new int[2 * kd->n_group];
+
+    cudaMalloc(&(kd->groupArray_next), kd->n_group * 2 * sizeof(Group));
+    cudaMalloc(&(kd->splitVecArray), kd->n_group * _f * sizeof(T));
+    cudaMalloc(&(kd->sideCountArray), kd->n_group * 2 * sizeof(int));
+
+  }
+
+
+  void loop_Launch(){
+
+    int n_blocks = kd->n_group;
+    int n_threads_per_block = 128;
+    int sm_size = 3 * _f * sizeof(T) + 3 * sizeof(int);
+
     
-    T *splitVecArray;  
-    int *sideCountArray;
-    
-    int iter = 0;
+    cudaMalloc(&kd_dev, sizeof(KernelData_split<S, T>));
+    cudaMemcpy((BYTE *)kd_dev, (BYTE *)kd, sizeof(KernelData_split<S, T>), 
+                                                  cudaMemcpyHostToDevice);
 
-    while(1){
-      printf("\n-------------\n");
-      printf("iter: %d\n", iter++);
-     
-      splitVecArray = new T[_f * kd->n_group];
-      sideCountArray = new int[2 * kd->n_group];
-
-      kd->groupArray = kd->groupArray_next;
-      cudaMalloc(&(kd->groupArray_next), kd->n_group * 2 * sizeof(Group));
-
-      launchKernel_split(kd, splitVecArray, sideCountArray); 
-
-      hostPostKernel_split(childPtrArray, splitVecArray, sideCountArray, kd->n_group, done);
+    kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, sm_size>>>(kd_dev);
 
 
-      delete [] splitVecArray;
-      delete [] sideCountArray;
+  }
 
 
-      if(!done) {
-        kd->n_group = kd->n_group * 2;
-        cudaFree(kd->groupArray);
+  void loop_postLaunch(){
+
+    cudaFree(kd_dev);
+
+    cudaMemcpy((BYTE *)splitVecArray, (BYTE *)(kd->splitVecArray), 
+                    kd->n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy((BYTE *)sideCountArray, (BYTE *)(kd->sideCountArray), 
+                    kd->n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
+
+    cudaFree(kd->splitVecArray);
+    cudaFree(kd->sideCountArray);
+
+
+    update_tree(childPtrArray, splitVecArray, sideCountArray, kd->n_group, done);
+
+
+    delete [] splitVecArray;
+    delete [] sideCountArray;
+
+    kd->n_group = kd->n_group * 2;
+    cudaFree(kd->groupArray);
+    kd->groupArray = kd->groupArray_next;
+
+  }
+
+
+
+  void update_tree(S **&childPtrArray, T *&splitVecArray, int *&sideCountArray, 
+                                        int n_group, bool& done){
+
+    S **childPtrArray_next = new S*[4 * n_group];
+    int done_count = 0;
+
+    for(int group_i = 0; group_i < n_group; group_i++){
+
+      for(int i = 0; i < 2; i++){
+
+        // a leaf - Don't need to create group.
+        if (sideCountArray[2 * group_i + i] <= (int)_K) { // _K == 1574 for _f == 786.
+          
+          done_count++;
+
+          childPtrArray_next[4 * group_i + 2 * i + 0] = childPtrArray[2 * group_i + i];
+          childPtrArray_next[4 * group_i + 2 * i + 1] = childPtrArray[2 * group_i + i];
+
+          continue;
+        }
+
+        // Need to create group.
+        annoy->_allocate_size(_n_nodes + 1);
+        S item = _n_nodes++;
+        Node* m = annoy->_get(item);
+
+        *(childPtrArray[2 * group_i + i]) = item; // children
+        m->n_descendants = sideCountArray[2 * group_i + i]; // n_descendants
+
+        childPtrArray_next[4 * group_i + 2 * i + 0] = &(m->children[0]);
+        childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);
       }
-      else {
-        cudaFree(kd->groupArray);
-        kd->groupArray = kd->groupArray_next;
-        
-        break;
+      
+      if(sideCountArray[2 * group_i] >= 0){ 
+        Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) - offsetof(Node, children));
+        memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T)); // v
       }
     }
 
-    cudaMemcpy((BYTE *)indexArray, (BYTE *)(kd->indexArray), 
-                _n_items * sizeof(S), cudaMemcpyDeviceToHost);
-          
-    Group *groupArray = new Group[2 * kd->n_group];
-    cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
-                2 * kd->n_group * sizeof(Group), cudaMemcpyDeviceToHost);
+    done = false;
+    if(done_count == 2 * n_group){
+      done = true;
+      delete [] childPtrArray_next;  
+      return;
+    }
     
-    copy_leaf_node(indexArray, groupArray, childPtrArray, kd->n_group);
-    
-    cudaFree(kd->indexArray);
-    cudaFree(kd->sideArray);
-    cudaFree(kd->groupArray);
-
-    delete [] groupArray;
-    delete kd;
-    
-    return item;
+    delete [] childPtrArray;
+    childPtrArray = childPtrArray_next;
   }
+
+
+
+
+
+
+  S *indexArray;
+
+  KernelData<S, T> *kd, *kd_dev;
+  int _f, _K;
+
+
+  bool done = false;
+  S **childPtrArray;
+  T *splitVecArray;
+  int *sideCountArray;
+  
+
+
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+// class AnnoyIndexSingleThreadedBuildPolicy {
+// public:
+
+//   template<typename S, typename T, typename D, typename Random>
+//   static void build(AnnoyIndex<S, T, D, Random, AnnoyIndexSingleThreadedBuildPolicy>* annoy, int q, int n_threads) {
+
+//     AnnoyIndexSingleThreadedBuildPolicy threaded_build_policy;
+//     annoy->thread_build(q, 0);
+
+//   }
+
+
+
+//   void lock_n_nodes() {}
+//   void unlock_n_nodes() {}
+
+//   void lock_nodes() {}
+//   void unlock_nodes() {}
+
+//   void lock_shared_nodes() {}
+//   void unlock_shared_nodes() {}
+
+//   void lock_roots() {}
+//   void unlock_roots() {}
+// };
+
 
 
 
 }
 
 #endif
-// vim: tabstop=2 shiftwidth=2
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

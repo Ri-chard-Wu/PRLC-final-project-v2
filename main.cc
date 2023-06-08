@@ -176,9 +176,8 @@ int main(int argc, char **argv) {
 	int f, n, n_trees;
 	
 	f = 786;
-	n = 1000000;
+	n = 100000;
 	n_trees = 5;
-
 
 	// f = 756;
 	// n = 20000;

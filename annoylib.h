@@ -946,6 +946,9 @@ public:
       
       const pair<T, S>& top = q.top();
       T d = top.first;
+
+      // printf("d: %f\n", d);
+
       S i = top.second;
       Node* nd = _get(i);
       q.pop();
@@ -1494,7 +1497,6 @@ public:
     T *vecArray_host;
     cudaMalloc(&vecArray_dev, _n_items * _f * sizeof(T));
     vecArray_host = new T[_n_items * _f];
-    int offset_batch = 0;
  
     for(int i = 0; i < _n_items; i++){
 
@@ -1685,7 +1687,8 @@ public:
         S item = _n_nodes++;
         Node* m = this->_get(item);
         m->n_descendants = (S)sz;
-        memcpy(m->children, &indexArray[offset], sz * sizeof(S));        
+        memcpy(m->children, &indexArray[offset], sz * sizeof(S));     
+        *(childPtrArray[i]) = item;   
       }
 
       i++;
@@ -1707,22 +1710,6 @@ public:
                                                         
   S _make_tree(S *indexArray) {
 
-      // this->_allocate_size(_n_nodes + 1);
-      // S item = _n_nodes++;
-      // Node* m = this->_get(item);
-      
-      // m->v[0] = 0;
-      // m->v[1] = 1;
-      // m->v[2] = 2;
-
-
-      // S *childPtr = &(m->children[0]);
-      // Node *p = (Node *)(((BYTE *)childPtr) - offsetof(Node, children));
-
-      // for(int i = 0; i < 3; i++){
-      //   printf("%f, ", p->v[i]);
-      // }
-          
 
     this->_allocate_size(_n_nodes + 1);
     S item = _n_nodes++;
@@ -1748,10 +1735,9 @@ public:
     int *sideArray_dev;
     Group *groupArray_dev;
 
-    // printf("a\n");
     hostPreKernel_split(indexArray, indexArray_dev, vecArray_dev, sideArray_dev, 
                               groupArray_dev);
-    // printf("b\n");                          
+                             
 
     bool done = false;
     int n_group = 1;

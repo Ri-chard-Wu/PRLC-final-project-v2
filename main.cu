@@ -46,10 +46,10 @@ int fill_item(char *filename, int f=40, int n=1000000, int n_trees=80){
 }
 
 
-void load_item(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, char *filename){
+void load_item(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, char *filename, int n){
 	
 	// t.load(filename);
-	t.load_items(filename);
+	t.load_items(filename, n);
 
 }
 
@@ -303,10 +303,18 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 
 
 
+// f = 786;
+// n = 100000;
+// n_trees = 5;
+// >>>
+//  Done in 13 secs.
+// limit: 10       precision: 11.00%       avg. time: 0.000160s
+// limit: 100      precision: 11.00%       avg. time: 0.000240s
+// limit: 1000     precision: 19.00%       avg. time: 0.001910s
+// limit: 10000    precision: 67.00%       avg. time: 0.017350s
 
 
 int main(int argc, char **argv) {
-
 
 
 	int f, n, n_trees;
@@ -320,9 +328,13 @@ int main(int argc, char **argv) {
 
 	// precision(f, n, n_trees);
 
-	fill_item("AnnoyGPU.tree", f, n, n_trees);
+
+
+	// fill_item("AnnoyGPU.tree", f, n, n_trees);
+	
 	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
-	load_item(t, "AnnoyGPU.tree");
+	load_item(t, "AnnoyGPU.tree", n);
+
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);
 

@@ -809,7 +809,7 @@ public:
 
 
 
-  bool load_items(const char* filename, char** error=NULL){
+  bool load_items(const char* filename, int n, char** error=NULL){
     
     // _fd = open(filename, O_RDONLY, (int)0400);
     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
@@ -837,7 +837,9 @@ public:
       return false;
     }
 
-    _n_nodes = (S)(size / _s);
+    // _n_nodes = (S)(size / _s);
+    _n_nodes = (S)(n);
+    printf("_n_nodes: %d\n", _n_nodes);
 
     // _nodes = (Node*)mmap(0, size, PROT_READ, MAP_SHARED, _fd, 0);
     // _n_nodes = (S)(size / _s);

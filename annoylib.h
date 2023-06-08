@@ -1533,15 +1533,15 @@ public:
 
 
 
-  void launchKernel_split(S *&indexArray_dev, T *&vecArray_dev, Group *&groupArray_dev, 
-                            int n_group, T *&splitVecArray, int *&sideArray_dev, 
-                              int *&sideCountArray){
+  void launchKernel_split(S *&indexArray_dev, T *&vecArray_dev, Group *&groupArray_dev,
+                            Group *&groupArray_next_dev, int n_group, T *&splitVecArray, 
+                            int *&sideArray_dev, int *&sideCountArray){
 
     T *splitVecArray_dev;
     cudaMalloc(&splitVecArray_dev, n_group * _f * sizeof(T));
 
-    Group *groupArray_next_dev;
-    cudaMalloc(&groupArray_next_dev, n_group * 2 * sizeof(Group));
+    // Group *groupArray_next_dev;
+    // cudaMalloc(&groupArray_next_dev, n_group * 2 * sizeof(Group));
     
     int *sideCountArray_dev;
     cudaMalloc(&sideCountArray_dev, n_group * 2 * sizeof(int));
@@ -1565,11 +1565,11 @@ public:
     cudaMemcpy((BYTE *)sideCountArray, (BYTE *)sideCountArray_dev, 
                     n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
 
-    cudaFree(groupArray_dev);
+    // cudaFree(groupArray_dev);
     cudaFree(splitVecArray_dev);
     cudaFree(sideCountArray_dev);
 
-    groupArray_dev = groupArray_next_dev;
+    // groupArray_dev = groupArray_next_dev;
     
   }
 
@@ -1581,19 +1581,12 @@ public:
     S **childPtrArray_next = new S*[4 * n_group];
     int done_count = 0;
 
-
     for(int group_i = 0; group_i < n_group; group_i++){
-
-
 
       for(int i = 0; i < 2; i++){
 
-
         // a leaf - Don't need to create group.
-        if (sideCountArray[2 * group_i + i] <= (size_t)_K) { // _K == 1574 for _f == 786.
-
-          // printf("c\n");
-
+        if (sideCountArray[2 * group_i + i] <= (int)_K) { // _K == 1574 for _f == 786.
           
           done_count++;
 
@@ -1603,46 +1596,27 @@ public:
           continue;
         }
 
-
-
         // Need to create group.
         this->_allocate_size(_n_nodes + 1);
         S item = _n_nodes++;
         Node* m = this->_get(item);
 
-        // printf("a\n");
-
         *(childPtrArray[2 * group_i + i]) = item; // children
-
-        // printf("b\n");
-
         m->n_descendants = sideCountArray[2 * group_i + i]; // n_descendants
 
-
-        
         childPtrArray_next[4 * group_i + 2 * i + 0] = &(m->children[0]);
         childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);
-
-           
       }
-
-
 
       Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) - offsetof(Node, children));
       
       if(sideCountArray[2 * group_i] >= 0){ 
         memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T)); // v
       }
-
-      // T sum = 0;
-      // for(int i = 0; i < _f; i++){
-      //   sum += p->v[i];
-      // }
-      // printf("p->v sum: %f\n", sum);
-
-
     }
 
+    // printf("done_count: %d\n", done_count);
+    // printf("n_group: %d\n", n_group);
 
     done = false;
     if(done_count == 2 * n_group){
@@ -1659,12 +1633,22 @@ public:
 
   void copy_leaf_node(S *&indexArray, Group *&groupArray, S **&childPtrArray, int n_group){
 
-    // printf("a\n");
-    for(int i = 0; i < n_group; ){
+    // int pos_prev = -1;
+    // for(int i = 0; i < 2 * n_group; i++){
 
-      
-      // while(childPtrArray[i + 1] == childPtrArray[i]) i++;
-      while(i + 1 <= n_group - 1){
+    //   if(groupArray[i].pos != pos_prev){
+    //     printf("\n");
+    //   }
+
+    //   printf("[%d / %d]: %p; %d, %d\n", i, 2 * n_group, childPtrArray[i], groupArray[i].pos, groupArray[i].sz);
+     
+    //   pos_prev = groupArray[i].pos;
+    // }
+
+
+    for(int i = 0; i < 2 * n_group; ){
+
+      while(i + 1 <= 2 * n_group - 1){
 
         if(childPtrArray[i + 1] == childPtrArray[i]){
           i++;
@@ -1733,10 +1717,10 @@ public:
     T *vecArray_dev;
     S *indexArray_dev;
     int *sideArray_dev;
-    Group *groupArray_dev;
+    Group *groupArray_dev, *groupArray_next_dev;
 
     hostPreKernel_split(indexArray, indexArray_dev, vecArray_dev, sideArray_dev, 
-                              groupArray_dev);
+                              groupArray_next_dev);
                              
 
     bool done = false;
@@ -1760,8 +1744,11 @@ public:
       splitVecArray = new T[_f * n_group];
       sideCountArray = new int[2 * n_group];
 
-      launchKernel_split(indexArray_dev, vecArray_dev, groupArray_dev, n_group, 
-                              splitVecArray, sideArray_dev, sideCountArray); 
+      groupArray_dev = groupArray_next_dev;
+      cudaMalloc(&groupArray_next_dev, n_group * 2 * sizeof(Group));
+
+      launchKernel_split(indexArray_dev, vecArray_dev, groupArray_dev, groupArray_next_dev,
+                             n_group, splitVecArray, sideArray_dev, sideCountArray); 
 
       print_sideCount(sideCountArray, n_group);   
 
@@ -1772,18 +1759,26 @@ public:
       delete [] sideCountArray;
 
 
-      if(!done) n_group = n_group * 2;
-      else break;
+      if(!done) {
+        n_group = n_group * 2;
+        cudaFree(groupArray_dev);
+      }
+      else {
+        // cudaFree(groupArray_next_dev);
 
-   
+        cudaFree(groupArray_dev);
+        groupArray_dev = groupArray_next_dev;
+        
+        break;
+      }
     }
 
     cudaMemcpy((BYTE *)indexArray, (BYTE *)indexArray_dev, 
                 _n_items * sizeof(S), cudaMemcpyDeviceToHost);
           
-    Group *groupArray = new Group[n_group];
+    Group *groupArray = new Group[2 * n_group];
     cudaMemcpy((BYTE *)groupArray, (BYTE *)groupArray_dev, 
-                n_group * sizeof(Group), cudaMemcpyDeviceToHost);
+                2 * n_group * sizeof(Group), cudaMemcpyDeviceToHost);
     
     copy_leaf_node(indexArray, groupArray, childPtrArray, n_group);
     

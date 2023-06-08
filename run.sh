@@ -12,6 +12,6 @@ rm main
 nvcc -o main main.cu #2> compile.log
 # code compile.log
 
-# rm run.log
-./main #> run.log
-# code run.log
+rm run.log
+./main > run.log
+code run.log

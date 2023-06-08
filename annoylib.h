@@ -1708,6 +1708,13 @@ public:
         gb[j] = new GPUStreamBuilder<S, T, D, Random>(this, vecArray_dev);
       }
 
+
+      gb[j].loop_preLaunchMalloc();
+      gb[j].loop_LaunchAsync();
+      gb[j].loop_postLaunchCopyAsync();
+      gb[j].loop_postLaunchUpdateSync();
+      
+
     }
 
 
@@ -1820,7 +1827,7 @@ public:
   }
 
 
-  void loop_preLaunch(){
+  void loop_preLaunchMalloc(){
 
     splitVecArray = new T[_f * kd->n_group];
     sideCountArray = new int[2 * kd->n_group];
@@ -1832,7 +1839,7 @@ public:
   }
 
 
-  void loop_Launch(){
+  void loop_LaunchAsync(){
 
     int n_blocks = kd->n_group;
     int n_threads_per_block = 128;
@@ -1844,12 +1851,10 @@ public:
                                                   cudaMemcpyHostToDevice);
 
     kernel_split<S, T, Random><<<n_blocks, n_threads_per_block, sm_size>>>(kd_dev);
-
-
   }
 
 
-  void loop_postLaunch(){
+  void loop_postLaunchCopyAsync(){
 
     cudaFree(kd_dev);
 
@@ -1861,10 +1866,13 @@ public:
 
     cudaFree(kd->splitVecArray);
     cudaFree(kd->sideCountArray);
+  }
 
+
+
+  void loop_postLaunchUpdateSync(){
 
     update_tree(childPtrArray, splitVecArray, sideCountArray, kd->n_group, done);
-
 
     delete [] splitVecArray;
     delete [] sideCountArray;
@@ -1872,7 +1880,6 @@ public:
     kd->n_group = kd->n_group * 2;
     cudaFree(kd->groupArray);
     kd->groupArray = kd->groupArray_next;
-
   }
 
 
@@ -1930,6 +1937,25 @@ public:
 
 
 
+  void loop_preLaunchMalloc_entry(GPUStreamBuilder *obj){
+    obj->loop_preLaunchMalloc();
+  }
+
+  void loop_LaunchAsync_entry(GPUStreamBuilder *obj){
+    obj->loop_LaunchAsync();
+  }
+
+  void loop_postLaunchCopyAsync_entry(GPUStreamBuilder *obj){
+    obj->loop_postLaunchCopyAsync();
+  }
+
+  void loop_postLaunchUpdateSync_entry(GPUStreamBuilder *obj){
+    obj->loop_postLaunchUpdateSync();
+  }
+
+  void one_step(){
+    pipeline[step++](this);
+  }
 
 
   S *indexArray;
@@ -1942,6 +1968,14 @@ public:
   S **childPtrArray;
   T *splitVecArray;
   int *sideCountArray;
+
+  void (*pipeline [4])(GPUStreamBuilder *) = \
+                          {loop_preLaunchMalloc_entry, 
+                           loop_LaunchAsync_entry
+                           loop_postLaunchCopyAsync_entry
+                           loop_postLaunchUpdateSync_entry};
+
+  int step = 0;
   
 
 

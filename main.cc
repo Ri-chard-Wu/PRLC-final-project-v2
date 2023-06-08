@@ -25,10 +25,8 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 
 	//******************************************************
 	//Building the tree
-	AnnoyIndex<int, double, Angular, Kiss32Random, \
-		AnnoyIndexSingleThreadedBuildPolicy> t = \
-		AnnoyIndex<int, double, Angular, Kiss32Random, \
-			AnnoyIndexSingleThreadedBuildPolicy>(f);
+	AnnoyIndex<int, float, Angular, Kiss32Random, \
+		AnnoyIndexSingleThreadedBuildPolicy> t(f);
 
 	char *filename = "test_disk_build-cpu.tree";
 	t.on_disk_build(filename);
@@ -39,13 +37,13 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 	
 	for(int i = 0; i < n; ++i){ // n: number of vectors
 
-		double *vec = (double *) malloc( f * sizeof(double) );
+		float *vec = (float *) malloc( f * sizeof(float) );
 
 		// double mean = (double)(rand() % 10);
 		// double std = (double)(rand() % 5);
-		double mean = 0.0;
-		double std = 1.0;		
-		std::normal_distribution<double> distribution(mean, std);
+		float mean = 0.0;
+		float std = 1.0;		
+		std::normal_distribution<float> distribution(mean, std);
 		
 		for(int z = 0; z < f; ++z){ // f: vector dim.
 
@@ -54,13 +52,13 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 
 		t.add_item(i, vec);
 
-		// std::cout << "Loading objects ...\t object: "
-		// 		  << i+1 
-		// 		  << "\tProgress:"
-		// 		  << std::fixed 
-		// 		  << std::setprecision(2) 
-		// 		  << (double) i / (double)(n + 1) * 100 
-		// 		  << "%\r";
+		std::cout << "Loading objects ...\t object: "
+				  << i+1 
+				  << "\tProgress:"
+				  << std::fixed 
+				  << std::setprecision(2) 
+				  << (float) i / (float)(n + 1) * 100 
+				  << "%\r";
 	}
 
 
@@ -178,8 +176,8 @@ int main(int argc, char **argv) {
 	int f, n, n_trees;
 	
 	f = 786;
-	n = 100000;
-	n_trees = 20;
+	n = 1000000;
+	n_trees = 5;
 
 
 	// f = 756;

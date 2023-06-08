@@ -1712,7 +1712,7 @@ public:
       launchKernel_split(indexArray_dev, vecArray_dev, groupArray_dev, groupArray_next_dev,
                              n_group, splitVecArray, sideArray_dev, sideCountArray); 
 
-      print_sideCount(sideCountArray, n_group);   
+      // print_sideCount(sideCountArray, n_group);   
 
       hostPostKernel_split(childPtrArray, splitVecArray, sideCountArray, n_group, done);
 

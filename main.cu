@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
 
 	f = 786;
 	n = 100000;
-	n_trees = 5;
+	n_trees = 21;
 
 	precision(f, n, n_trees);
 

@@ -1102,39 +1102,32 @@ T get_vec_norm(T* v, int f) {
 }
 
 
-template<typename T>
-__device__
-void normalize(T* vec, int f) {
-  T norm = get_vec_norm<T>(vec, f);
-  if (norm > 0) {
-    for (int z = 0; z < f; z++)
-      vec[z] = norm;
-  }
-}
+// template<typename T>
+// __device__
+// void normalize(T* vec, int f) {
+//   T norm = get_vec_norm<T>(vec, f);
+//   if (norm > 0) {
+//     for (int z = 0; z < f; z++)
+//       vec[z] = norm;
+//   }
+// }
 
 
 
 
 template<typename T>
 __device__
-void normalize(int tid, int n_threads, T* vec, int f) {
+void normalize(int tid, int n_threads, T* vec, int f, T *norm) {
 
-  
+  if(tid == 0) *norm = get_vec_norm<T>(vec, f);
 
-  // T norm = get_vec_norm<T>(vec, f);
-  // if (norm > 0) {
-  //   for (int z = 0; z < f; z++)
-  //     vec[z] /= norm;
-  // }
-
-  T norm = get_vec_norm<T>(vec, f);
+  __syncthreads();
 
   int idx = tid;
   while(idx < f){
-    vec[idx] /= norm;
+    vec[idx] /= (*norm);
     idx += n_threads;
   }
-
   __syncthreads();
 }
 
@@ -1157,66 +1150,67 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
-template<typename S, typename T, typename Random>
-__device__
-void two_means(S *indexArray, int sz, T *vecArray, int f, 
-                        Random& random, bool cosine, T* p, T* q) {
+// template<typename S, typename T, typename Random>
+// __device__
+// void two_means(S *indexArray, int sz, T *vecArray, int f, 
+//                         Random& random, bool cosine, T* p, T* q) {
 
-  static int iteration_steps = 200;
-  size_t count = sz;
+//   static int iteration_steps = 200;
+//   size_t count = sz;
 
-  size_t i = random.index(count);
-  size_t j = random.index(count-1);
-  j += (j >= i); // ensure that i != j
+//   size_t i = random.index(count);
+//   size_t j = random.index(count-1);
+//   j += (j >= i); // ensure that i != j
 
-  copy_vec<T>(p, vecArray + indexArray[i] * f, f);
-  copy_vec<T>(q, vecArray + indexArray[j] * f, f);
+//   copy_vec<T>(p, vecArray + indexArray[i] * f, f);
+//   copy_vec<T>(q, vecArray + indexArray[j] * f, f);
 
-  if (cosine) { // yes
-    normalize<T>(p, f); 
-    normalize<T>(q, f);
-  }
+//   if (cosine) { // yes
+//     normalize<T>(p, f); 
+//     normalize<T>(q, f);
+//   }
 
-  int ic = 1, jc = 1;
+//   int ic = 1, jc = 1;
 
-  for (int l = 0; l < iteration_steps; l++) {
+//   for (int l = 0; l < iteration_steps; l++) {
    
-    size_t k = random.index(count);
+//     size_t k = random.index(count);
  
-    T di = ic * distance(p, vecArray + indexArray[k] * f, f);
-    T dj = jc * distance(q, vecArray + indexArray[k] * f, f);
+//     T di = ic * distance(p, vecArray + indexArray[k] * f, f);
+//     T dj = jc * distance(q, vecArray + indexArray[k] * f, f);
   
-    T norm = cosine ? get_vec_norm(vecArray + indexArray[k] * f, f) : 1;  // cosine == true
+//     T norm = cosine ? get_vec_norm(vecArray + indexArray[k] * f, f) : 1;  // cosine == true
     
-    if (!(norm > T(0))) {
-      continue;
-    }
+//     if (!(norm > T(0))) {
+//       continue;
+//     }
 
 
-    if (di < dj) {
+//     if (di < dj) {
       
-      for (int z = 0; z < f; z++)
-        p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
-      ic++;
-    } 
-    else if (dj < di) {
+//       for (int z = 0; z < f; z++)
+//         p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
+//       ic++;
+//     } 
+//     else if (dj < di) {
       
-      for (int z = 0; z < f; z++)
-        q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
-      jc++;
-    }
-  }
+//       for (int z = 0; z < f; z++)
+//         q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
+//       jc++;
+//     }
+//   }
 
-}
-
-
+// }
 
 
+
+  // two_means<S, T, Random>(tid, n_threads, indexArray, sz, vecArray, f,
+  //                            random, true, p, q, sm);
 
 template<typename S, typename T, typename Random>
 __device__
 void two_means(int tid, int n_threads, S *indexArray, int sz, 
-      T *vecArray, int f, Random& random, bool cosine, T* p, T* q, BYTE *sm) {
+      T *vecArray, int f, Random& random, bool cosine, T* p, T* q, WORD *sm) {
 
 
   
@@ -1227,7 +1221,7 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
   int *jc = ((int *)(norm + 1)) + 1;
   size_t *k = ((size_t *)(jc + 1)) + 0;
   
-
+  
 
   static int iteration_steps = 200;
   size_t count, i, j;
@@ -1245,77 +1239,95 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
   __syncthreads();
 
   if (cosine) { // yes
-    normalize<T>(tid, n_threads, p, f); 
-    normalize<T>(tid, n_threads, q, f);
+    normalize<T>(tid, n_threads, p, f, norm); 
+    normalize<T>(tid, n_threads, q, f, norm);
   }
 
 
-  if(tid == 0) int *ic = 1, *jc = 1;
+  if(tid == 0) *ic = 1, *jc = 1;
   __syncthreads();
 
   for (int l = 0; l < iteration_steps; l++) {
    
-    if(tid == 0) *k = random.index(count);
-    __syncthreads();
- 
-    *di = (*ic) * distance(p, vecArray + indexArray[k] * f, f);
-    *dj = (*jc) * distance(q, vecArray + indexArray[k] * f, f);
-    T norm = cosine ? get_vec_norm(vecArray + indexArray[k] * f, f) : 1;  // cosine == true
+    if(tid == 0){
     
-    if (!(norm > T(0))) {
-      continue;
+      *k = random.index(count);
+      *di = (*ic) * distance(p, vecArray + indexArray[*k] * f, f);
+      *dj = (*jc) * distance(q, vecArray + indexArray[*k] * f, f);
+      *norm = cosine ? get_vec_norm(vecArray + indexArray[*k] * f, f) : 1;  // cosine == true
+    }
+    __syncthreads();
+
+    if (!(*norm > T(0))) continue;
+    
+
+    if (*di < *dj) {
+      
+      int idx = tid;
+      while(idx < f){
+        p[idx] = (p[idx] * (*ic) + vecArray[indexArray[*k] * f + idx] / (*norm)) / ((*ic) + 1);
+        idx += n_threads;
+      }
+      __syncthreads();
+
+      if(tid == 0) (*ic)++;
+      __syncthreads();
+    }
+    else if (*dj < *di) {
+      
+      int idx = tid;
+      while(idx < f){
+        q[idx] = (q[idx] * (*jc) + vecArray[indexArray[*k] * f + idx] / (*norm)) / ((*jc) + 1);
+        idx += n_threads;
+      }
+      __syncthreads();
+
+      if(tid == 0) (*jc)++;
+      __syncthreads();
     }
 
-
-
-    if (di < dj) {
-      
-      for (int z = 0; z < f; z++)
-        p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
-      ic++;
-    } 
-    else if (dj < di) {
-      
-      for (int z = 0; z < f; z++)
-        q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
-      jc++;
-    }
   }
 
 }
 
 
 
+// template<typename S, typename T, typename Random>
+// __device__
+// void create_split(S *indexArray, int sz, T *vecArray, 
+//               int f, Random& random, T *p, T *q, T* splitVec) {
+
+//   two_means<S, T, Random>(indexArray, sz, vecArray, f,
+//                              random, true, p, q);
+
+//   for (int z = 0; z < f; z++)
+//     splitVec[z] = p[z] - q[z];
+
+//   normalize<T>(splitVec, f);
+// }
 
 
 
-template<typename S, typename T, typename Random>
-__device__
-void create_split(S *indexArray, int sz, T *vecArray, 
-              int f, Random& random, T *p, T *q, T* splitVec) {
-
-  two_means<S, T, Random>(indexArray, sz, vecArray, f,
-                             random, true, p, q);
-
-  for (int z = 0; z < f; z++)
-    splitVec[z] = p[z] - q[z];
-
-  normalize<T>(splitVec, f);
-}
 
 
 template<typename S, typename T, typename Random>
 __device__
 void create_split(int tid, int n_threads, S *indexArray, int sz, T *vecArray, 
-              int f, Random& random, T *p, T *q, T* splitVec) {
+              int f, Random& random, T *p, T *q, T* splitVec, WORD *sm) {
 
   two_means<S, T, Random>(tid, n_threads, indexArray, sz, vecArray, f,
-                             random, true, p, q);
+                             random, true, p, q, sm);
+  __syncthreads();                             
 
-  for (int z = 0; z < f; z++)
-    splitVec[z] = p[z] - q[z];
+  int idx = tid;
+  while(idx < f){
+    splitVec[idx] = p[idx] - q[idx]; 
+    idx += n_threads;
+  }
+  __syncthreads();
+  
 
-  normalize<T>(tid, n_threads, splitVec, f);
+  normalize<T>(tid, n_threads, splitVec, f, (T *)sm);
 }
 
 
@@ -1448,6 +1460,7 @@ __global__ void kernel_split(
   int *isBalanced_sm = (int *)(sm + 3 * f);
   int *nLeft_sm = isBalanced_sm + 1;
   int *nRight_sm = nLeft_sm + 1;
+  WORD *sm_func = (WORD *)(nRight_sm + 1);
   
 
   // clock_t start_time = clock(); 
@@ -1460,36 +1473,9 @@ __global__ void kernel_split(
 
     *isBalanced_sm = 0;
   
-
-    // clock_t start_time = clock(); 
-    // clock_t stop_time = clock();
-    // int runtime = (int)(stop_time - start_time);
-    // if(tid == 0){
-    //   printf("load sm dt: %d\n", runtime);
-    // }
-
-
-    // if(tid == 0){
-
-    //   // if(gid == 0){        
-    //   //   start_time = clock(); 
-    //   // }
-
-    //   create_split(indexArray_local, sz, vecArray, f,
-    //                  _random, p_sm, q_sm, splitVec_sm);
-
-    //   // if(gid == 0){        
-    //   //   stop_time = clock();
-    //   //   runtime = (int)(stop_time - start_time);
-    //   //   printf("create_split() dt: %d\n", runtime);      
-        
-    //   // }
-
-    // }    
-
-
+ 
     create_split(tid, blockDim.x, indexArray_local, sz, vecArray, f,
-                    _random, p_sm, q_sm, splitVec_sm);
+                    _random, p_sm, q_sm, splitVec_sm, sm_func);
                     
     __syncthreads();
 
@@ -1755,7 +1741,8 @@ public:
 
     int n_blocks = kd->n_group;
     int n_threads_per_block = 128;
-    int sm_size = 3 * _f * sizeof(T) + 3 * sizeof(int);
+    int sm_size = 3 * _f * sizeof(T) + 3 * sizeof(int) + \
+                  3 * sizeof(T) + 2 * sizeof(int) + 1 * sizeof(size_t);
     
     cudaMalloc(&kd_dev, sizeof(KernelData));
     cudaMemcpy((BYTE *)kd_dev, (BYTE *)kd, sizeof(KernelData), 

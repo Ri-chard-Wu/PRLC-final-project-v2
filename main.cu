@@ -13,7 +13,7 @@
 using namespace Annoy;
 
 
-int fill_item(char *filename, int f=40, int n=1000000, int n_trees=80){
+int fill_item(char *filename, int f=40, int n=1000000){
 
 	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
 
@@ -35,13 +35,15 @@ int fill_item(char *filename, int f=40, int n=1000000, int n_trees=80){
 
 		t.add_item(i, vec);
 
-		std::cout << "Loading objects ...\t object: "
-				  << i+1 
-				  << "\tProgress:"
-				  << std::fixed 
-				  << std::setprecision(2) 
-				  << (float) i / (float)(n + 1) * 100 
-				  << "%\r";			  
+		if(i % 1024 == 0){
+			std::cout << "Loading objects ...\t object: "
+					<< i+1 
+					<< "\tProgress:"
+					<< std::fixed 
+					<< std::setprecision(2) 
+					<< (float) i / (float)(n + 1) * 100 
+					<< "%\r";		
+		}	  
 	}
 }
 
@@ -256,7 +258,8 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 
 			t_start = std::chrono::high_resolution_clock::now();
 
-			//search_k defaults to "n_trees * (*limit)" (which is  << n) if not provided (pass -1).
+			//search_k defaults to "n_trees * (*limit)" 
+				// (which is  << n) if not provided (pass -1).
 			t.get_nns_by_item(j, (*limit), (size_t) -1, &toplist, nullptr); 
 
 			
@@ -320,23 +323,27 @@ int main(int argc, char **argv) {
 	int f, n, n_trees;
 
 
-	f = 786;
-	n = 100000;
-	n_trees = 5;
-
+	// f = 786;
+	// n = 18500;
+	// n_trees = 5;
 	
 
 	// precision(f, n, n_trees);
+	
+	// -----------------------------
 
 
-
-	// fill_item("AnnoyGPU.tree", f, n, n_trees);
+	f = 786;
+	n = 1000000;
+	n_trees = 5;
+	// fill_item("AnnoyGPU-1e4.tree", f, n);
 	
 	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
-	load_item(t, "AnnoyGPU.tree", n);
+	load_item(t, "AnnoyGPU-1e6.tree", n);
 
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);
+
 
 	return EXIT_SUCCESS;
 }

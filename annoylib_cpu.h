@@ -1132,6 +1132,72 @@ public:
     return true;
   }
 
+
+
+
+
+
+  bool load_items(const char* filename, int n, char** error=NULL){
+    
+    // _fd = open(filename, O_RDONLY, (int)0400);
+    _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
+
+    if (_fd == -1) {
+      set_error_from_errno(error, "Unable to open");
+      _fd = 0;
+      return false;
+    }
+
+  
+    off_t size = lseek_getsize(_fd);
+   
+    if (size == -1) {
+      set_error_from_errno(error, "Unable to get size");
+      return false;
+    } 
+    else if (size == 0) {
+      set_error_from_errno(error, "Size of file is zero");
+      return false;
+    } 
+    else if (size % _s) {
+      // Something is fishy with this index!
+      set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
+      return false;
+    }
+
+    // _n_nodes = (S)(size / _s);
+    _n_nodes = (S)(n);
+    printf("_n_nodes: %d\n", _n_nodes);
+
+    // _nodes = (Node*)mmap(0, size, PROT_READ, MAP_SHARED, _fd, 0);
+    // _n_nodes = (S)(size / _s);
+
+    _loaded = false;
+    _n_items = _n_nodes;
+    // _n_nodes = 0;
+    _nodes_size = _n_nodes;
+    _on_disk = true;
+    // _seed = Random::default_seed;
+    // _roots.clear();
+
+
+    if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
+      set_error_from_errno(error, "Unable to truncate");
+      return false;
+    }
+
+#ifdef MAP_POPULATE // yes
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
+#else
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
+#endif
+
+    return true;
+  }
+
+
+
+
   T get_distance(S i, S j) const {
     return D::normalized_distance(D::distance(_get(i), _get(j), _f));
   }

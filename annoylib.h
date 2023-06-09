@@ -1108,9 +1108,36 @@ void normalize(T* vec, int f) {
   T norm = get_vec_norm<T>(vec, f);
   if (norm > 0) {
     for (int z = 0; z < f; z++)
-      vec[z] /= norm;
+      vec[z] = norm;
   }
 }
+
+
+
+
+template<typename T>
+__device__
+void normalize(int tid, int n_threads, T* vec, int f) {
+
+  
+
+  // T norm = get_vec_norm<T>(vec, f);
+  // if (norm > 0) {
+  //   for (int z = 0; z < f; z++)
+  //     vec[z] /= norm;
+  // }
+
+  T norm = get_vec_norm<T>(vec, f);
+
+  int idx = tid;
+  while(idx < f){
+    vec[idx] /= norm;
+    idx += n_threads;
+  }
+
+  __syncthreads();
+}
+
 
 
 // distance(p, vecArray + indexArray[k] * f, f);
@@ -1129,9 +1156,6 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
-
-
-// two_means<S, T, Random>(indexArray, sz, vecArray, f, random, true, p, q);
 
 template<typename S, typename T, typename Random>
 __device__
@@ -1187,20 +1211,113 @@ void two_means(S *indexArray, int sz, T *vecArray, int f,
 
 
 
+
+
+template<typename S, typename T, typename Random>
+__device__
+void two_means(int tid, int n_threads, S *indexArray, int sz, 
+      T *vecArray, int f, Random& random, bool cosine, T* p, T* q, BYTE *sm) {
+
+
+  
+  T *dj = ((T *)sm) + 0;
+  T *di = ((T *)sm) + 1;
+  T *norm = ((T *)sm) + 2;
+  int *ic = ((int *)(norm + 1)) + 0;
+  int *jc = ((int *)(norm + 1)) + 1;
+  size_t *k = ((size_t *)(jc + 1)) + 0;
+  
+
+
+  static int iteration_steps = 200;
+  size_t count, i, j;
+
+  if(tid == 0){
+    count = sz;
+    i = random.index(count);
+    j = random.index(count-1);
+    j += (j >= i); // ensure that i != j
+
+    copy_vec<T>(p, vecArray + indexArray[i] * f, f);
+    copy_vec<T>(q, vecArray + indexArray[j] * f, f);
+  }
+  
+  __syncthreads();
+
+  if (cosine) { // yes
+    normalize<T>(tid, n_threads, p, f); 
+    normalize<T>(tid, n_threads, q, f);
+  }
+
+
+  if(tid == 0) int *ic = 1, *jc = 1;
+  __syncthreads();
+
+  for (int l = 0; l < iteration_steps; l++) {
+   
+    if(tid == 0) *k = random.index(count);
+    __syncthreads();
+ 
+    *di = (*ic) * distance(p, vecArray + indexArray[k] * f, f);
+    *dj = (*jc) * distance(q, vecArray + indexArray[k] * f, f);
+    T norm = cosine ? get_vec_norm(vecArray + indexArray[k] * f, f) : 1;  // cosine == true
+    
+    if (!(norm > T(0))) {
+      continue;
+    }
+
+
+
+    if (di < dj) {
+      
+      for (int z = 0; z < f; z++)
+        p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
+      ic++;
+    } 
+    else if (dj < di) {
+      
+      for (int z = 0; z < f; z++)
+        q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
+      jc++;
+    }
+  }
+
+}
+
+
+
+
+
+
 template<typename S, typename T, typename Random>
 __device__
 void create_split(S *indexArray, int sz, T *vecArray, 
               int f, Random& random, T *p, T *q, T* splitVec) {
 
-  two_means<S, T, Random>(indexArray, sz, vecArray, f, random, true, p, q);
+  two_means<S, T, Random>(indexArray, sz, vecArray, f,
+                             random, true, p, q);
 
   for (int z = 0; z < f; z++)
     splitVec[z] = p[z] - q[z];
 
-
-      
   normalize<T>(splitVec, f);
 }
+
+
+template<typename S, typename T, typename Random>
+__device__
+void create_split(int tid, int n_threads, S *indexArray, int sz, T *vecArray, 
+              int f, Random& random, T *p, T *q, T* splitVec) {
+
+  two_means<S, T, Random>(tid, n_threads, indexArray, sz, vecArray, f,
+                             random, true, p, q);
+
+  for (int z = 0; z < f; z++)
+    splitVec[z] = p[z] - q[z];
+
+  normalize<T>(tid, n_threads, splitVec, f);
+}
+
 
 
 __device__
@@ -1333,9 +1450,9 @@ __global__ void kernel_split(
   int *nRight_sm = nLeft_sm + 1;
   
 
-  clock_t start_time = clock(); 
-  clock_t stop_time = clock();
-  int runtime = (int)(stop_time - start_time);
+  // clock_t start_time = clock(); 
+  // clock_t stop_time = clock();
+  // int runtime = (int)(stop_time - start_time);
   
   
   int attempt;
@@ -1352,33 +1469,37 @@ __global__ void kernel_split(
     // }
 
 
-    if(tid == 0){
+    // if(tid == 0){
 
-      if(gid == 0){        
-        start_time = clock(); 
-      }
+    //   // if(gid == 0){        
+    //   //   start_time = clock(); 
+    //   // }
 
-      create_split(indexArray_local, sz, vecArray, f,
-                     _random, p_sm, q_sm, splitVec_sm);
+    //   create_split(indexArray_local, sz, vecArray, f,
+    //                  _random, p_sm, q_sm, splitVec_sm);
 
-      if(gid == 0){        
-        stop_time = clock();
-        runtime = (int)(stop_time - start_time);
-        printf("create_split() dt: %d\n", runtime);      
+    //   // if(gid == 0){        
+    //   //   stop_time = clock();
+    //   //   runtime = (int)(stop_time - start_time);
+    //   //   printf("create_split() dt: %d\n", runtime);      
         
-      }
+    //   // }
 
-    }    
+    // }    
 
+
+    create_split(tid, blockDim.x, indexArray_local, sz, vecArray, f,
+                    _random, p_sm, q_sm, splitVec_sm);
+                    
     __syncthreads();
 
     
 
     int idx = tid;
 
-    if(gid == 0){
-      start_time = clock(); 
-    }
+    // if(gid == 0){
+    //   start_time = clock(); 
+    // }
    
     while(idx < sz){
 
@@ -1396,11 +1517,11 @@ __global__ void kernel_split(
       idx += blockDim.x;
     }
 
-    if(gid == 0){
-      stop_time = clock();
-      runtime = (int)(stop_time - start_time);
-      printf("dot  dt: %d\n", runtime);
-    }
+    // if(gid == 0){
+    //   stop_time = clock();
+    //   runtime = (int)(stop_time - start_time);
+    //   printf("dot  dt: %d\n", runtime);
+    // }
     
 
 
@@ -1409,27 +1530,27 @@ __global__ void kernel_split(
 
     if(tid == 0){
 
-      if(gid == 0) start_time = clock(); 
+      // if(gid == 0) start_time = clock(); 
 
       group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
 
-      if(gid == 0) {
-        stop_time = clock();
-        runtime = (int)(stop_time - start_time);
-        printf("group_getSideCount()  dt: %d\n", runtime);
+      // if(gid == 0) {
+      //   stop_time = clock();
+      //   runtime = (int)(stop_time - start_time);
+      //   printf("group_getSideCount()  dt: %d\n", runtime);
 
-      }
+      // }
 
-      if(gid == 0) start_time = clock(); 
+      // if(gid == 0) start_time = clock(); 
       if (_split_imbalance(*nLeft_sm, *nRight_sm) < 0.95) {
         *isBalanced_sm = 1;
       }      
 
-      if(gid == 0){
-        stop_time = clock();
-        runtime = (int)(stop_time - start_time);
-        printf("_split_imbalance()  dt: %d\n", runtime);      
-      }
+      // if(gid == 0){
+      //   stop_time = clock();
+      //   runtime = (int)(stop_time - start_time);
+      //   printf("_split_imbalance()  dt: %d\n", runtime);      
+      // }
 
     } 
 

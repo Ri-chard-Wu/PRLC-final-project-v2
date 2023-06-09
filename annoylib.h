@@ -1186,7 +1186,6 @@ void two_means(S *indexArray, int sz, T *vecArray, int f,
 }
 
 
-// create_split(indexArray_local, sz, vecArray, f, _random, p_sm, q_sm, splitVec_sm);
 
 template<typename S, typename T, typename Random>
 __device__
@@ -1294,8 +1293,6 @@ __global__ void kernel_split(
 
 
 
-
-
   int bid_x = blockIdx.x; 
 
   if(groupArray[bid_x].sz <= K){
@@ -1335,14 +1332,42 @@ __global__ void kernel_split(
   int *nLeft_sm = isBalanced_sm + 1;
   int *nRight_sm = nLeft_sm + 1;
   
+
+  clock_t start_time = clock(); 
+  clock_t stop_time = clock();
+  int runtime = (int)(stop_time - start_time);
+  
   
   int attempt;
   for (attempt = 0; attempt < 3; attempt++){
 
     *isBalanced_sm = 0;
   
+
+    // clock_t start_time = clock(); 
+    // clock_t stop_time = clock();
+    // int runtime = (int)(stop_time - start_time);
+    // if(tid == 0){
+    //   printf("load sm dt: %d\n", runtime);
+    // }
+
+
     if(tid == 0){
-      create_split(indexArray_local, sz, vecArray, f, _random, p_sm, q_sm, splitVec_sm);
+
+      if(gid == 0){        
+        start_time = clock(); 
+      }
+
+      create_split(indexArray_local, sz, vecArray, f,
+                     _random, p_sm, q_sm, splitVec_sm);
+
+      if(gid == 0){        
+        stop_time = clock();
+        runtime = (int)(stop_time - start_time);
+        printf("create_split() dt: %d\n", runtime);      
+        
+      }
+
     }    
 
     __syncthreads();
@@ -1351,6 +1376,10 @@ __global__ void kernel_split(
 
     int idx = tid;
 
+    if(gid == 0){
+      start_time = clock(); 
+    }
+   
     while(idx < sz){
 
       S item = indexArray_local[idx];
@@ -1367,16 +1396,41 @@ __global__ void kernel_split(
       idx += blockDim.x;
     }
 
+    if(gid == 0){
+      stop_time = clock();
+      runtime = (int)(stop_time - start_time);
+      printf("dot  dt: %d\n", runtime);
+    }
+    
+
+
     __syncthreads();
 
 
     if(tid == 0){
 
+      if(gid == 0) start_time = clock(); 
+
       group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
 
+      if(gid == 0) {
+        stop_time = clock();
+        runtime = (int)(stop_time - start_time);
+        printf("group_getSideCount()  dt: %d\n", runtime);
+
+      }
+
+      if(gid == 0) start_time = clock(); 
       if (_split_imbalance(*nLeft_sm, *nRight_sm) < 0.95) {
         *isBalanced_sm = 1;
       }      
+
+      if(gid == 0){
+        stop_time = clock();
+        runtime = (int)(stop_time - start_time);
+        printf("_split_imbalance()  dt: %d\n", runtime);      
+      }
+
     } 
 
     __syncthreads();
@@ -1432,6 +1486,8 @@ __global__ void kernel_split(
     }    
   }
 }
+
+
 
 
 
@@ -2016,7 +2072,7 @@ public:
   void thread_build(int n_tree, int thread_idx){
 
 
-    int build_n_items_max = 10000;
+    int build_n_items_max = 1000000;
 
 
     for(int i = 0; i < _n_items; ){

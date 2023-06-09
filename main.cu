@@ -316,6 +316,30 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 // limit: 1000     precision: 19.00%       avg. time: 0.001910s
 // limit: 10000    precision: 67.00%       avg. time: 0.017350s
 
+// gpu -------------------------------------
+// 5000000 / 5000000
+
+//  Done in 125 secs.
+// limit: 10       precision: 1.00%        avg. time: 0.000180s
+// limit: 100      precision: 7.00%        avg. time: 0.000700s
+// limit: 1000     precision: 12.00%       avg. time: 0.006390s
+// limit: 10000    precision: 23.00%       avg. time: 0.066370s
+
+// Done
+
+// cpu -------------------------------------------
+// _n_nodes: 5000000
+
+// n trees built: 1 / 5
+// n trees built: 2 / 5
+// n trees built: 3 / 5
+// n trees built: 4 / 5
+// n trees built: 5 / 5
+//  Done in 1070 secs.
+// limit: 10       precision: 10.00%       avg. time: 0.000160s
+// limit: 100      precision: 10.00%       avg. time: 0.000210s
+// limit: 1000     precision: 11.00%       avg. time: 0.002200s
+// limit: 10000    precision: 17.00%       avg. time: 0.022570s
 
 int main(int argc, char **argv) {
 
@@ -334,12 +358,12 @@ int main(int argc, char **argv) {
 
 
 	f = 786;
-	n = 1000000;
+	n = 100000;
 	n_trees = 5;
 	// fill_item("AnnoyGPU-1e4.tree", f, n);
 	
 	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
-	load_item(t, "AnnoyGPU-1e6.tree", n);
+	load_item(t, "AnnoyGPU-1e5.tree", n);
 
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);

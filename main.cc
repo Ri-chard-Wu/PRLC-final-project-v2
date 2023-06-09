@@ -292,8 +292,9 @@ int main(int argc, char **argv) {
 
 	int f, n, n_trees;
 	
+
 	f = 786;
-	n = 1000000;
+	n = 5000000;
 	n_trees = 5;
 
 
@@ -304,7 +305,7 @@ int main(int argc, char **argv) {
 	AnnoyIndex<int, float, Angular, Kiss32Random, 
 				AnnoyIndexSingleThreadedBuildPolicy> t(f);
 
-	load_item(t, "AnnoyGPU-1e6.tree", n);
+	load_item(t, "AnnoyGPU-5e6.tree", n);
 
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);

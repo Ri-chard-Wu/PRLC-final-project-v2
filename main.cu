@@ -373,15 +373,17 @@ int main(int argc, char **argv) {
 
 
 	f = 786;
-	n = 1000000;
+	n = 100000;
 	n_trees = 5;
-	fill_item("AnnoyGPU-1e6.tree", f, n);
+	// // fill_item("AnnoyGPU-5e6.tree", f, n);
 	
-	// AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
-	// load_item(t, "AnnoyGPU-1e6.tree", n);
+	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
+	load_item(t, "AnnoyGPU-2e5.tree", n);
 
 	// build_index(t, n_trees);
 	// precision_test(t, f, n, n_trees);
+
+
 
 
 	return EXIT_SUCCESS;

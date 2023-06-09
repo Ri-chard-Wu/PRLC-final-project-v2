@@ -351,6 +351,11 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 // limit: 1000     precision: 11.00%       avg. time: 0.002200s
 // limit: 10000    precision: 17.00%       avg. time: 0.022570s
 
+
+
+// gpu, create_split() no parallel, 1e6 nodes, 5 trees: Done in 25 secs.
+// gpu, create_split() with parallel, 1e6 nodes, 5 trees: Done in 22 secs.
+
 int main(int argc, char **argv) {
 
 

@@ -1123,9 +1123,11 @@ void normalize(int tid, int n_threads, T* vec, int f, T *norm) {
 
   __syncthreads();
 
+  T norm_local = *norm;
+
   int idx = tid;
   while(idx < f){
-    vec[idx] /= (*norm);
+    vec[idx] /= norm_local;
     idx += n_threads;
   }
   __syncthreads();
@@ -1204,9 +1206,6 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
-  // two_means<S, T, Random>(tid, n_threads, indexArray, sz, vecArray, f,
-  //                            random, true, p, q, sm);
-
 template<typename S, typename T, typename Random>
 __device__
 void two_means(int tid, int n_threads, S *indexArray, int sz, 
@@ -1248,7 +1247,7 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
   __syncthreads();
 
   for (int l = 0; l < iteration_steps; l++) {
-   
+    
     if(tid == 0){
     
       *k = random.index(count);
@@ -1258,29 +1257,34 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
     }
     __syncthreads();
 
-    if (!(*norm > T(0))) continue;
+    T norm_local = *norm;
+    T di_local = *di;
+    T dj_local = *dj;
+    int ic_local = *ic;
+    int jc_local = *jc;
+    size_t k_local = *k;
+
+    if (!(norm_local > T(0))) continue;
     
 
-    if (*di < *dj) {
+    if (di_local < dj_local) {
       
       int idx = tid;
       while(idx < f){
-        p[idx] = (p[idx] * (*ic) + vecArray[indexArray[*k] * f + idx] / (*norm)) / ((*ic) + 1);
+        p[idx] = (p[idx] * ic_local + vecArray[indexArray[k_local] * f + idx] / norm_local) / (ic_local + 1);
         idx += n_threads;
       }
-      __syncthreads();
 
       if(tid == 0) (*ic)++;
       __syncthreads();
     }
-    else if (*dj < *di) {
+    else if (dj_local < di_local) {
       
       int idx = tid;
       while(idx < f){
-        q[idx] = (q[idx] * (*jc) + vecArray[indexArray[*k] * f + idx] / (*norm)) / ((*jc) + 1);
+        q[idx] = (q[idx] * jc_local + vecArray[indexArray[k_local] * f + idx] / norm_local) / (jc_local + 1);
         idx += n_threads;
       }
-      __syncthreads();
 
       if(tid == 0) (*jc)++;
       __syncthreads();
@@ -1483,9 +1487,6 @@ __global__ void kernel_split(
 
     int idx = tid;
 
-    // if(gid == 0){
-    //   start_time = clock(); 
-    // }
    
     while(idx < sz){
 

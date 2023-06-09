@@ -257,20 +257,6 @@ inline void two_means(const vector<Node*>& nodes, int f,
 }
 
 
-// template<typename S>
-// void swap(vector<S>& arr, int id1, int id2){
-//   S tmp = arr[id1];
-//   arr[id1] = arr[id2];
-//   arr[id2] = tmp;
-// }
-
-// template<typename T>
-// void swap(T *arr, int id1, int id2){
-//   T tmp = arr[id1];
-//   arr[id1] = arr[id2];
-//   arr[id2] = tmp;
-// }
-
 } // namespace
 
 
@@ -414,8 +400,14 @@ struct Angular : Base {
 };
 
 
+template<typename S, typename T, typename D, typename Random>
+class GPUStreamBuilder;
+
+class AnnoyIndexGPUBuildPolicy;
 
 
+typedef unsigned char BYTE;
+typedef unsigned int WORD;
 
 template<typename S, typename T, typename R = uint64_t>
 class AnnoyIndexInterface {
@@ -444,7 +436,7 @@ class AnnoyIndexInterface {
 
 
 
-template<typename S, typename T, typename Distance, typename Random>
+template<typename S, typename T, typename Distance, typename Random, typename BuildPolicy>
   class AnnoyIndex : public AnnoyIndexInterface<S, T, 
 #if __cplusplus >= 201103L
     typename std::remove_const<decltype(Random::default_seed)>::type
@@ -489,10 +481,6 @@ public:
 
     // Max number of descendants to fit into node (space of children[2] + v[]).
     _K = (S) (((size_t) (_s - offsetof(Node, children))) / sizeof(S)); // 82
-
-    // printf("_s: %d \n", (int)_s);
-    // printf("offsetof(Node, children): %d \n", (int)offsetof(Node, children));
-    // printf("sizeof(S): %d \n", (int)sizeof(S));
 
     reinitialize(); // Reset everything
   }
@@ -589,7 +577,8 @@ public:
 
     _n_nodes = _n_items;
 
-    thread_build(q, 0);
+    // thread_build(q, 0);
+    BuildPolicy::template build<S, T>(this, q, n_threads);
 
 
     // Also, copy the roots into the last segment of the array
@@ -780,35 +769,6 @@ public:
 
 
 
-
-
-//     _on_disk = true;
-//     _fd = open(file, O_RDWR | O_CREAT | O_TRUNC, (int) 0600);
-
-//     if (_fd == -1) {
-//       set_error_from_errno(error, "Unable to open");
-//       _fd = 0;
-//       return false;
-//     }
-
-//     _nodes_size = 1;
-//     if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
-//       set_error_from_errno(error, "Unable to truncate");
-//       return false;
-//     }
-
-
-// #ifdef MAP_POPULATE // yes
-//     // printf("MAP_POPULATE yes\n");
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
-// #else
-//     // printf("MAP_POPULATE no\n");
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
-// #endif
-
-
-
-
   bool load_items(const char* filename, int n, char** error=NULL){
     
     // _fd = open(filename, O_RDONLY, (int)0400);
@@ -864,8 +824,6 @@ public:
 
 
 
-
-
   T get_distance(S i, S j) const {
     return D::normalized_distance(D::distance(_get(i), _get(j), _f));
   }
@@ -910,7 +868,72 @@ public:
   }
 
   
-  virtual void thread_build(int q, int thread_idx) = 0;
+  // virtual void thread_build(int q, int thread_idx) = 0;
+
+
+
+  void gpu_build(int n_tree, BuildPolicy& bp){
+
+    int build_n_items_max = 1000000;
+    for(int i = 0; i < _n_items; ){
+
+      int item_start = i;
+      if(item_start + build_n_items_max - 1 < _n_items){
+        i += build_n_items_max - 1;        
+      }
+      else{
+        i += _n_items - 1 - i;
+      }
+      int item_end = i++;
+
+      T *vecArray_dev;                   
+
+      // ---------------------------------
+
+      T *vecArray_host;
+
+      int n_items = item_end - item_start + 1;
+      cudaMalloc(&vecArray_dev, n_items * _f * sizeof(T));
+      vecArray_host = new T[n_items * _f];
+  
+      for(int i = 0; i < n_items; i++){
+
+        int item = item_start + i;
+        Node *node = _get(item);
+        
+        for(int z = 0; z < _f; z++){
+          vecArray_host[i * _f + z] = node->v[z];
+        }
+      }
+
+      cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
+                      n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
+      delete [] vecArray_host;
+
+      // ---------------------------------
+
+      
+      for(int i = 0; i < n_tree; i ++){
+
+        GPUStreamBuilder<S, T, D, Random> *gb =\
+                new GPUStreamBuilder<S, T, D, Random>(this, 
+                            vecArray_dev, item_start, item_end);
+
+        while(!gb->is_done()){ 
+
+          gb->one_step(); 
+          gb->wait(); 
+        }
+
+        printf("n trees built: %d / %d\n", i + 1,  n_tree);
+        delete gb;
+      }
+
+      printf("%d / %d\n\n", item_end + 1, _n_items);
+      cudaFree(vecArray_dev);
+    }
+  }
+
 
 
 
@@ -1058,22 +1081,10 @@ public:
 
 
 
-typedef unsigned char BYTE;
-typedef unsigned int WORD;
-
-  // copy_vec<T>(p, vecArray[indexArray[i] * f], f);
 
 template<typename T>
 __device__ 
 void copy_vec(T *vec_dst, T *vec_src, int f){
-
-  // T sum = 0;
-  // for(int i = 0; i < f; i++){
-  //   sum += vec_src[i];
-  //   printf("%f, ", vec_src[i]);
-  // }
-  // printf("vec_src sum: %f\n", sum);
-
 
   for(int i = 0; i < f; i++){
     vec_dst[i] = vec_src[i];
@@ -1081,38 +1092,11 @@ void copy_vec(T *vec_dst, T *vec_src, int f){
 }
 
 
-// template<typename T>
-// __device__ __host__
-// T dot(const T* x, const T* y, int f) {
-//   T s = 0;
-//   for (int z = 0; z < f; z++) {
-//     s += (*x) * (*y);
-//     x++;
-//     y++;
-//     // s += x[z] * y[z];
-//   }
-//   return s;
-// }
-
-
 template<typename T>
 __device__
 T get_vec_norm(T* v, int f) {
   return sqrt(dot(v, v, f));
 }
-
-
-// template<typename T>
-// __device__
-// void normalize(T* vec, int f) {
-//   T norm = get_vec_norm<T>(vec, f);
-//   if (norm > 0) {
-//     for (int z = 0; z < f; z++)
-//       vec[z] = norm;
-//   }
-// }
-
-
 
 
 template<typename T>
@@ -1135,8 +1119,6 @@ void normalize(int tid, int n_threads, T* vec, int f, T *norm) {
 
 
 
-// distance(p, vecArray + indexArray[k] * f, f);
-
 template<typename T>
 __device__
 T distance(T *vec1, T *vec2, int f) {
@@ -1151,58 +1133,6 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
-
-// template<typename S, typename T, typename Random>
-// __device__
-// void two_means(S *indexArray, int sz, T *vecArray, int f, 
-//                         Random& random, bool cosine, T* p, T* q) {
-
-//   static int iteration_steps = 200;
-//   size_t count = sz;
-
-//   size_t i = random.index(count);
-//   size_t j = random.index(count-1);
-//   j += (j >= i); // ensure that i != j
-
-//   copy_vec<T>(p, vecArray + indexArray[i] * f, f);
-//   copy_vec<T>(q, vecArray + indexArray[j] * f, f);
-
-//   if (cosine) { // yes
-//     normalize<T>(p, f); 
-//     normalize<T>(q, f);
-//   }
-
-//   int ic = 1, jc = 1;
-
-//   for (int l = 0; l < iteration_steps; l++) {
-   
-//     size_t k = random.index(count);
- 
-//     T di = ic * distance(p, vecArray + indexArray[k] * f, f);
-//     T dj = jc * distance(q, vecArray + indexArray[k] * f, f);
-  
-//     T norm = cosine ? get_vec_norm(vecArray + indexArray[k] * f, f) : 1;  // cosine == true
-    
-//     if (!(norm > T(0))) {
-//       continue;
-//     }
-
-
-//     if (di < dj) {
-      
-//       for (int z = 0; z < f; z++)
-//         p[z] = (p[z] * ic + vecArray[indexArray[k] * f + z] / norm) / (ic + 1);
-//       ic++;
-//     } 
-//     else if (dj < di) {
-      
-//       for (int z = 0; z < f; z++)
-//         q[z] = (q[z] * jc + vecArray[indexArray[k] * f + z] / norm) / (jc + 1);
-//       jc++;
-//     }
-//   }
-
-// }
 
 
 
@@ -1296,23 +1226,6 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
 
 
 
-// template<typename S, typename T, typename Random>
-// __device__
-// void create_split(S *indexArray, int sz, T *vecArray, 
-//               int f, Random& random, T *p, T *q, T* splitVec) {
-
-//   two_means<S, T, Random>(indexArray, sz, vecArray, f,
-//                              random, true, p, q);
-
-//   for (int z = 0; z < f; z++)
-//     splitVec[z] = p[z] - q[z];
-
-//   normalize<T>(splitVec, f);
-// }
-
-
-
-
 
 template<typename S, typename T, typename Random>
 __device__
@@ -1370,41 +1283,8 @@ void group_moveSide(S* indexArray, int *sideArray, int sz){
       n_left++;
     }
 
-
-    // if(sideArray[n_left] == 1){ // right
-    //   if(sideArray[sz - 1 - n_right] == 0){
-    //     swap<int>(sideArray, n_left, sz - 1 - n_right);
-    //     swap<S>(indexArray, n_left, sz - 1 - n_right);  
-    //   }
-    //   n_right++;
-    // }
-    // else{
-    //   n_left++;
-    // }
-
-
   }
 }
-
-
-
-// __device__
-// void group_getSideCount(int *sideArray, int sz, int *n_left, int *n_right){
-
-//   *n_left = 0, *n_right = 0;
-  
-//   for(int i = 0; i < sz; i++){
-//     if(sideArray[i] == 1){
-//       (*n_right)++;
-//     }
-//     else{
-//       (*n_left)++;
-//     }
-//   }  
-// }
-
-
-
 
 
 
@@ -1448,17 +1328,6 @@ __device__
 void group_getSideCount(int tid, int n_threads, int *sideArray, int sz,
                                            int *n_left, int *n_right){
 
-  // *n_left = 0, *n_right = 0;
-  
-  // for(int i = 0; i < sz; i++){
-  //   if(sideArray[i] == 1){
-  //     (*n_right)++;
-  //   }
-  //   else{
-  //     (*n_left)++;
-  //   }
-  // }  
-
   int nl = 0, nr = 0;
   int idx = tid;
   while(idx < sz){
@@ -1484,21 +1353,12 @@ void group_getSideCount(int tid, int n_threads, int *sideArray, int sz,
   __syncthreads();
 }
 
+
 struct Group{
   Group(int pos, int sz): pos(pos), sz(sz){}
   Group() {}
   int pos, sz;
 };
-
-
-
-
-template<typename S, typename T, typename Distance, typename Random>
-class AnnoyIndex_GPU;
-
-template<typename S, typename T, typename D, typename Random>
-class GPUStreamBuilder;
-
 
 
 template<typename S, typename T, typename D, typename Random>
@@ -1614,9 +1474,6 @@ __global__ void kernel_split(
     __syncthreads();
 
     if(tid == 0){
-
-      // group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-
       if (_split_imbalance(*nLeft_sm, *nRight_sm) < 0.95) {
         *isBalanced_sm = 1;
       }      
@@ -1667,33 +1524,7 @@ __global__ void kernel_split(
 
 
 
-
-
-
-
   if(tid == 0){
-
-    // if(_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99){
-
-    //   for (int z = 0; z < f; z++){
-        
-    //     splitVec_sm[z] = 0;
-    //   }    
-
-    //   while (_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99) {
-
-    //     for(int j = 0; j < sz; j++){
-    //       sideArray_local[j] = _random.flip();
-    //     }
-
-    //     group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-    //   }
-
-    //   group_moveSide(indexArray_local, sideArray_local, sz);
-    // }
-
-
-
 
     // returns
     groupArray_next[2 * bid_x].pos = offset;
@@ -1710,9 +1541,6 @@ __global__ void kernel_split(
     }    
   }
 }
-
-
-
 
 
 template<typename S, typename T, typename D, typename Random>
@@ -1769,7 +1597,7 @@ public:
   };
 
 
-  GPUStreamBuilder(AnnoyIndex_GPU<S, T, D, Random> *annoy, 
+  GPUStreamBuilder(AnnoyIndex<S, T, D, Random, AnnoyIndexGPUBuildPolicy> *annoy, 
             T *vecArray_dev, S item_start, S item_end): annoy(annoy){
 
 
@@ -2024,9 +1852,7 @@ public:
     if(is_done()) return;
 
     cur_step = (cur_step + 1) % n_pipeline_stage;
-
     // printf("cur_step: %d\n", cur_step);
-
     pipeline[cur_step](this);
     
   }
@@ -2039,7 +1865,6 @@ public:
                 _n_items * sizeof(S), cudaMemcpyDeviceToHost);
 
     for(int i = 0; i < _n_items; i++) indexArray[i] += item_offset;
-    
 
     Group *groupArray = new Group[kd->n_group];
     cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
@@ -2088,32 +1913,18 @@ public:
 
     updateTreeLeafNode();
 
-
-
     cudaFree(kd->indexArray);
-
     cudaFree(kd->sideArray);
-  
-    // printf("free cur\n");
     cudaFree(kd->groupArray);
 
-
-    
     delete kd;
 
-    
-        
     cudaEventDestroy(event_asyncCopy);
     cudaStreamDestroy(stream);
-
-
   }
 
 
-
-
-
-  AnnoyIndex_GPU<S, T, D, Random> *annoy;
+  AnnoyIndex<S, T, D, Random, AnnoyIndexGPUBuildPolicy> *annoy;
   S *indexArray;
   KernelData *kd, *kd_dev;
   int _f;
@@ -2138,215 +1949,18 @@ public:
 };
 
 
-
-
-template<typename S, typename T, typename Distance, typename Random>
-class AnnoyIndex_GPU: public AnnoyIndex<S, T, Distance, Random>{
-
+class AnnoyIndexGPUBuildPolicy {
 public:
-
-
-  typedef Distance D;
-  typedef typename D::template Node<S, T> Node;
-
-
-  using typename AnnoyIndex<S, T, Distance, Random>::R;
-
-  using AnnoyIndex<S, T, Distance, Random>::_f;
-  using AnnoyIndex<S, T, Distance, Random>::_s; 
-  using AnnoyIndex<S, T, Distance, Random>::_n_items;
-  using AnnoyIndex<S, T, Distance, Random>::_nodes; 
-  using AnnoyIndex<S, T, Distance, Random>::_n_nodes;
-  using AnnoyIndex<S, T, Distance, Random>::_nodes_size;
-  using AnnoyIndex<S, T, Distance, Random>::_roots;
-  using AnnoyIndex<S, T, Distance, Random>::_K;
-  using AnnoyIndex<S, T, Distance, Random>::_seed;
-  using AnnoyIndex<S, T, Distance, Random>::_loaded;
-  using AnnoyIndex<S, T, Distance, Random>::_verbose;
-  using AnnoyIndex<S, T, Distance, Random>::_fd;
-  using AnnoyIndex<S, T, Distance, Random>::_on_disk;
-  using AnnoyIndex<S, T, Distance, Random>::_built;
-  Random _random;
-
-
-
-
-  AnnoyIndex_GPU(int f): AnnoyIndex<S, T, Distance, Random>(f){
-    // Random _random(_seed + thread_idx);
-  }
-
-
-  // void cudaMalloc_vecArray(T *&vecArray_dev){
-
-  //   T *vecArray_host;
-
-  //   cudaMalloc(&vecArray_dev, _n_items * _f * sizeof(T));
-
-  //   vecArray_host = new T[_n_items * _f];
- 
-  //   for(int i = 0; i < _n_items; i++){
-
-  //     Node *node = this->_get(i);
-      
-  //     for(int z = 0; z < _f; z++){
-  //       vecArray_host[i * _f + z] = node->v[z];
-  //     }
-  //   }
-
-  //   cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
-  //                   _n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
-
-  //   delete [] vecArray_host;
-
-  // }
   
+  template<typename S, typename T, typename D, typename Random>
+  static void build(AnnoyIndex<S, T, D, Random, 
+            AnnoyIndexGPUBuildPolicy>* annoy, int q, int n_threads) {
 
-  // void thread_build(int n_tree, int thread_idx) {
-
-  //   T *vecArray_dev;
-  //   cudaMalloc_vecArray(vecArray_dev);
-
-  //   for(int i = 0; i < n_tree; i ++){
-
-  //     GPUStreamBuilder<S, T, D, Random> *gb =\
-  //        new GPUStreamBuilder<S, T, D, Random>(this, vecArray_dev);
-    
-  //     while(!gb->is_done()){
-
-  //       gb->one_step(); 
-  //       gb->wait();  
-  //     }
-
-  //     printf("n trees built: %d / %d\n", i + 1,  n_tree);
-  //     delete gb;
-  //   }
-
-
-  //   cudaFree(vecArray_dev);
-  // }
-
-
-
-
-
-
-
-
-  void cudaMalloc_vecArray(T *&vecArray_dev,
-                               int item_start, int item_end){
-
-    T *vecArray_host;
-
-    int n_items = item_end - item_start + 1;
-
-    cudaMalloc(&vecArray_dev, n_items * _f * sizeof(T));
-
-    vecArray_host = new T[n_items * _f];
- 
-    for(int i = 0; i < n_items; i++){
-
-      int item = item_start + i;
-
-      Node *node = this->_get(item);
-      
-      for(int z = 0; z < _f; z++){
-        vecArray_host[i * _f + z] = node->v[z];
-      }
-    }
-
-    cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
-                    n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
-
-    delete [] vecArray_host;
+    AnnoyIndexGPUBuildPolicy build_policy;
+    annoy->gpu_build(q, build_policy);
   }
-
-
-
-  // void thread_build(int n_tree, int thread_idx) {
-
-  //   T *vecArray_dev;
-
-  //   int start = 0;
-  //   int stop = _n_items - 1;
-
-  //   cudaMalloc_vecArray(vecArray_dev, start, stop);
-
-  //   for(int i = 0; i < n_tree; i ++){
-
-  //     GPUStreamBuilder<S, T, D, Random> *gb =\
-  //        new GPUStreamBuilder<S, T, D, Random>(this, vecArray_dev, start, stop);
-    
-  //     while(!gb->is_done()){
-
-  //       gb->one_step(); 
-  //       gb->wait();  
-  //     }
-
-  //     printf("n trees built: %d / %d\n", i + 1,  n_tree);
-  //     delete gb;
-  //   }
-
-
-  //   cudaFree(vecArray_dev);
-  // }
-
-
-
-
-
-  void thread_build(int n_tree, int thread_idx){
-
-
-    int build_n_items_max = 1000000;
-
-
-    for(int i = 0; i < _n_items; ){
-
-      int item_start = i;
-      if(item_start + build_n_items_max - 1 < _n_items){
-        i += build_n_items_max - 1;        
-      }
-      else{
-        i += _n_items - 1 - i;
-      }
-      int item_end = i++;
-
-
-      T *vecArray_dev;
-      cudaMalloc_vecArray(vecArray_dev, item_start, item_end);
-
-                   
-      for(int i = 0; i < n_tree; i ++){
-
-
-        GPUStreamBuilder<S, T, D, Random> *gb =\
-                new GPUStreamBuilder<S, T, D, Random>(this, 
-                            vecArray_dev, item_start, item_end);
-
-        while(!gb->is_done()){ 
-
-          gb->one_step(); 
-          gb->wait(); 
-        }
-
-
-        printf("n trees built: %d / %d\n", i + 1,  n_tree);
-        delete gb;
-      }
-
-  
-
-      printf("%d / %d\n\n", item_end + 1, _n_items);
-
-      cudaFree(vecArray_dev);
-    }
-  }
-
-
-
-
-
 };
+
 
 
 }

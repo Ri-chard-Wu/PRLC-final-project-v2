@@ -15,7 +15,7 @@ using namespace Annoy;
 
 int fill_item(char *filename, int f=40, int n=1000000){
 
-	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
+	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
 
 	std::default_random_engine generator;
 
@@ -48,7 +48,7 @@ int fill_item(char *filename, int f=40, int n=1000000){
 }
 
 
-void load_item(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, char *filename, int n){
+void load_item(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, char *filename, int n){
 	
 	// t.load(filename);
 	t.load_items(filename, n);
@@ -56,7 +56,7 @@ void load_item(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, char *filen
 }
 
 
-void build_index(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, int n_trees){
+void build_index(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, int n_trees){
 
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
@@ -79,7 +79,7 @@ void build_index(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, int n_tre
 
 
 
-int precision_test(AnnoyIndex_GPU<int, float, Angular, Kiss32Random>& t, 
+int precision_test(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, 
 			int f=40, int n=1000000, int n_trees=80){
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
@@ -166,7 +166,7 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 
 	std::default_random_engine generator;
 
-	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
+	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
 
 
 	char *filename = "test_disk_build.tree";
@@ -377,7 +377,7 @@ int main(int argc, char **argv) {
 	n_trees = 5;
 	// fill_item("AnnoyGPU-1e4.tree", f, n);
 	
-	AnnoyIndex_GPU<int, float, Angular, Kiss32Random> t(f);
+	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
 	load_item(t, "AnnoyGPU-1e6.tree", n);
 
 	build_index(t, n_trees);

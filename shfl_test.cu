@@ -84,7 +84,6 @@ __global__ void cuda_reduction(T *arr, int n, T *ret) {
     __syncthreads();
 
     val = blockReduceSum<T>(val);
-
     if (tid == 0) *ret = val;
 }
 

@@ -792,54 +792,54 @@ public:
 
 
 
-//     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
+    _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
 
-//     if (_fd == -1) {
-//       set_error_from_errno(error, "Unable to open");
-//       _fd = 0;
-//       return false;
-//     }
+    if (_fd == -1) {
+      set_error_from_errno(error, "Unable to open");
+      _fd = 0;
+      return false;
+    }
 
   
-//     off_t size = lseek_getsize(_fd);
+    off_t size = lseek_getsize(_fd);
    
-//     if (size == -1) {
-//       set_error_from_errno(error, "Unable to get size");
-//       return false;
-//     } 
-//     else if (size == 0) {
-//       set_error_from_errno(error, "Size of file is zero");
-//       return false;
-//     } 
-//     else if (size % _s) {
-//       // Something is fishy with this index!
-//       set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
-//       return false;
-//     }
+    if (size == -1) {
+      set_error_from_errno(error, "Unable to get size");
+      return false;
+    } 
+    else if (size == 0) {
+      set_error_from_errno(error, "Size of file is zero");
+      return false;
+    } 
+    else if (size % _s) {
+      // Something is fishy with this index!
+      set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
+      return false;
+    }
 
-//     // _n_nodes = (S)(size / _s);
-//     _n_nodes = (S)(n);
-//     printf("_n_nodes: %d\n", _n_nodes);
+    // _n_nodes = (S)(size / _s);
+    _n_nodes = (S)(n);
+    printf("_n_nodes: %d\n", _n_nodes);
 
-//     _loaded = false;
-//     _n_items = _n_nodes;
-//     _nodes_size = _n_nodes;
-//     _on_disk = true;
+    _loaded = false;
+    _n_items = _n_nodes;
+    _nodes_size = _n_nodes;
+    _on_disk = true;
 
 
 
-//     if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
-//       set_error_from_errno(error, "Unable to truncate");
-//       return false;
-//     }
+    if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
+      set_error_from_errno(error, "Unable to truncate");
+      return false;
+    }
 
-// #ifdef MAP_POPULATE // yes
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
-// #else
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
-// #endif
+#ifdef MAP_POPULATE // yes
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
+#else
+    _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
+#endif
 
-//     return true;
+    return true;
   }
 
 
@@ -891,15 +891,17 @@ public:
   // virtual void thread_build(int q, int thread_idx) = 0;
 
 
+  int GPU_BUILD_MAX_ITEM_NUM = 1000000;
 
   void gpu_build(int n_tree, BuildPolicy& bp){
 
-    int build_n_items_max = 1000000;
+    
+
     for(int i = 0; i < _n_items; ){
 
       int item_start = i;
-      if(item_start + build_n_items_max - 1 < _n_items){
-        i += build_n_items_max - 1;        
+      if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
+        i += GPU_BUILD_MAX_ITEM_NUM - 1;        
       }
       else{
         i += _n_items - 1 - i;

@@ -10,6 +10,21 @@
 #include <random>
 
 
+
+
+int f = 786;
+int n = 1000000;
+int n_trees = 5;
+char *filename = "AnnoyGPU-1e6.tree";
+
+int search_multiplier = 20;
+int GPU_BUILD_MAX_ITEM_NUM = 500000;
+
+
+
+
+
+
 using namespace Annoy;
 
 
@@ -114,7 +129,7 @@ int precision_test(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBu
 			t_start = std::chrono::high_resolution_clock::now();
 
 			//search_k defaults to "n_trees * (*limit)" (which is  << n) if not provided (pass -1).
-			t.get_nns_by_item(j, (*limit), (size_t) -1, &toplist, nullptr); 
+			t.get_nns_by_item(j, (*limit), search_multiplier * n_trees * (*limit), &toplist, nullptr); 
 
 			
 			t_end = std::chrono::high_resolution_clock::now();
@@ -305,83 +320,105 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 }
 
 
-// cpu -------------------------------------
-// f = 786;
-// n = 100000;
-// n_trees = 5;
-// >>>
-//  Done in 13 secs.
-// limit: 10       precision: 11.00%       avg. time: 0.000160s
-// limit: 100      precision: 11.00%       avg. time: 0.000240s
-// limit: 1000     precision: 19.00%       avg. time: 0.001910s
-// limit: 10000    precision: 67.00%       avg. time: 0.017350s
 
-// gpu -------------------------------------
-// n trees built: 5 / 5
-// 1000000 / 1000000
+// #############################################################
+/*
+gpu, 1e6, 5, no partition  -------------------------------------------
 
-//  Done in 26 secs.
-// limit: 10       precision: 10.00%       avg. time: 0.000100s
-// limit: 100      precision: 10.00%       avg. time: 0.000170s
-// limit: 1000     precision: 10.00%       avg. time: 0.001510s
-// limit: 10000    precision: 23.00%       avg. time: 0.014620s
-
-// gpu -------------------------------------
-// 5000000 / 5000000
-
-//  Done in 125 secs.
-// limit: 10       precision: 1.00%        avg. time: 0.000180s
-// limit: 100      precision: 7.00%        avg. time: 0.000700s
-// limit: 1000     precision: 12.00%       avg. time: 0.006390s
-// limit: 10000    precision: 23.00%       avg. time: 0.066370s
-
-// Done
-
-// cpu -------------------------------------------
-// _n_nodes: 5000000
-
-// n trees built: 1 / 5
-// n trees built: 2 / 5
-// n trees built: 3 / 5
-// n trees built: 4 / 5
-// n trees built: 5 / 5
-//  Done in 1070 secs.
-// limit: 10       precision: 10.00%       avg. time: 0.000160s
-// limit: 100      precision: 10.00%       avg. time: 0.000210s
-// limit: 1000     precision: 11.00%       avg. time: 0.002200s
-// limit: 10000    precision: 17.00%       avg. time: 0.022570s
+ Done in 20 secs.
+limit: 10       precision: 11.00%       avg. time: 0.000100s
+limit: 100      precision: 11.00%       avg. time: 0.000210s
+limit: 1000     precision: 12.00%       avg. time: 0.001930s
+limit: 10000    precision: 24.00%       avg. time: 0.019520s
 
 
+gpu, 1e6, 5, partition into 4 -------------------------------------------
 
+ Done in 19 secs.
+limit: 10       precision: 4.00%        avg. time: 0.000130s
+limit: 100      precision: 5.00%        avg. time: 0.000300s
+limit: 1000     precision: 11.00%       avg. time: 0.001580s
+limit: 10000    precision: 21.00%       avg. time: 0.016340s
+
+gpu, 1e6, 5, partition into 4, search 5x -------------------------------------------
+
+ Done in 19 secs.
+limit: 10       precision: 3.00%        avg. time: 0.000140s
+limit: 100      precision: 6.00%        avg. time: 0.000640s
+limit: 1000     precision: 15.00%       avg. time: 0.006720s
+limit: 10000    precision: 45.00%       avg. time: 0.064340s
+
+gpu, 1e6, 5, partition into 4, search 20x -------------------------------------------
+
+ Done in 19 secs.
+limit: 10       precision: 9.00%        avg. time: 0.000330s
+limit: 100      precision: 16.00%       avg. time: 0.002510s
+limit: 1000     precision: 28.00%       avg. time: 0.026500s
+limit: 10000    precision: 100.00%      avg. time: 0.232380s
+
+gpu, 1e6, 5, no partition, search 20x -------------------------------------------
+
+ Done in 20 secs.
+limit: 10       precision: 11.00%       avg. time: 0.000360s
+limit: 100      precision: 15.00%       avg. time: 0.003350s
+limit: 1000     precision: 32.00%       avg. time: 0.031870s
+limit: 10000    precision: 100.00%      avg. time: 0.255850s
+*/
+
+// #############################################################
+
+/*
+
+cpu, 5e6, 5 -------------------------------------------
+
+ Done in 1070 secs.
+limit: 10       precision: 10.00%       avg. time: 0.000160s
+limit: 100      precision: 10.00%       avg. time: 0.000210s
+limit: 1000     precision: 11.00%       avg. time: 0.002200s
+limit: 10000    precision: 17.00%       avg. time: 0.022570s
+
+
+gpu, 5e6, 5, no partition -------------------------------------
+
+ Done in 125 secs.
+limit: 10       precision: 1.00%        avg. time: 0.000180s
+limit: 100      precision: 7.00%        avg. time: 0.000700s
+limit: 1000     precision: 12.00%       avg. time: 0.006390s
+limit: 10000    precision: 23.00%       avg. time: 0.066370s
+
+
+gpu, 5e6, 5, partition into 5, search 20x -------------------------------------------
+
+ Done in 112 secs.
+limit: 10       precision: 2.00%        avg. time: 0.000410s
+limit: 100      precision: 11.00%       avg. time: 0.003170s
+limit: 1000     precision: 16.00%       avg. time: 0.031250s
+limit: 10000    precision: 39.00%       avg. time: 0.309640s
+
+*/
+
+
+
+
+
+
+
+// -------------------------------------------
 // gpu, create_split() no parallel, 1e6 nodes, 5 trees: Done in 25 secs.
 // gpu, create_split() with parallel, 1e6 nodes, 5 trees: Done in 22 secs.
 
 int main(int argc, char **argv) {
 
 
-	int f, n, n_trees;
-
-
-	// f = 786;
-	// n = 18500;
-	// n_trees = 5;
-	
-
-	// precision(f, n, n_trees);
-	
-	// -----------------------------
-
-
-	f = 786;
-	n = 100000;
-	n_trees = 5;
-	// // fill_item("AnnoyGPU-5e6.tree", f, n);
+	// fill_item("AnnoyGPU-5e6.tree", f, n);
 	
 	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
-	load_item(t, "AnnoyGPU-2e5.tree", n);
+	load_item(t, filename, n);
 
-	// build_index(t, n_trees);
-	// precision_test(t, f, n, n_trees);
+	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
+
+	build_index(t, n_trees);
+	precision_test(t, f, n, n_trees);
 
 
 

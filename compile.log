@@ -6,7 +6,9 @@ main.cu(172): warning: conversion from a string literal to "char *" is deprecate
 
 main.cu(263): warning: integer conversion resulted in truncation
 
-main.cu(381): warning: conversion from a string literal to "char *" is deprecated
+main.cu(378): warning: conversion from a string literal to "char *" is deprecated
+
+main.cu(362): warning: variable "n_trees" was set but never used
 
 main.cu(48): warning: missing return statement at end of non-void function "fill_item"
 
@@ -16,7 +18,7 @@ main.cu(172): warning: conversion from a string literal to "char *" is deprecate
 
 main.cu(263): warning: integer conversion resulted in truncation
 
-main.cu(381): warning: conversion from a string literal to "char *" is deprecated
+main.cu(378): warning: conversion from a string literal to "char *" is deprecated
 
 main.cu: In function 'int precision_test(Annoy::AnnoyIndex<int, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexGPUBuildPolicy>&, int, int, int)':
 main.cu:117:63: warning: overflow in implicit constant conversion [-Woverflow]

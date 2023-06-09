@@ -1369,26 +1369,120 @@ void group_moveSide(S* indexArray, int *sideArray, int sz){
     else{
       n_left++;
     }
+
+
+    // if(sideArray[n_left] == 1){ // right
+    //   if(sideArray[sz - 1 - n_right] == 0){
+    //     swap<int>(sideArray, n_left, sz - 1 - n_right);
+    //     swap<S>(indexArray, n_left, sz - 1 - n_right);  
+    //   }
+    //   n_right++;
+    // }
+    // else{
+    //   n_left++;
+    // }
+
+
   }
 }
 
 
 
-__device__
-void group_getSideCount(int *sideArray, int sz, int *n_left, int *n_right){
+// __device__
+// void group_getSideCount(int *sideArray, int sz, int *n_left, int *n_right){
 
-  *n_left = 0, *n_right = 0;
+//   *n_left = 0, *n_right = 0;
   
-  for(int i = 0; i < sz; i++){
-    if(sideArray[i] == 1){
-      (*n_right)++;
+//   for(int i = 0; i < sz; i++){
+//     if(sideArray[i] == 1){
+//       (*n_right)++;
+//     }
+//     else{
+//       (*n_left)++;
+//     }
+//   }  
+// }
+
+
+
+
+
+
+template<typename T>
+__inline__ __device__
+T warpReduceSum(T val) {
+
+    for (int offset = warpSize / 2; offset > 0; offset >>= 1) {
+
+        T val_other = __shfl_down_sync(0xffffffff, val, offset);
+        val = val + val_other;
     }
-    else{
-      (*n_left)++;
-    }
-  }  
+
+    return val;
 }
 
+
+template<typename T>
+__inline__ __device__
+T blockReduceSum(T val) {
+
+    __shared__ T shared[32]; 
+    int lane = threadIdx.x % warpSize;
+    int wid = threadIdx.x / warpSize;
+
+    val = warpReduceSum<T>(val);  
+
+    if (lane == 0) shared[wid] = val; 
+
+    __syncthreads();             
+
+    val = (threadIdx.x < blockDim.x / warpSize) ? shared[lane] : 0;
+    if (wid==0) val = warpReduceSum<T>(val); 
+
+    return val;
+}
+
+
+template<typename T>
+__device__
+void group_getSideCount(int tid, int n_threads, int *sideArray, int sz,
+                                           int *n_left, int *n_right){
+
+  // *n_left = 0, *n_right = 0;
+  
+  // for(int i = 0; i < sz; i++){
+  //   if(sideArray[i] == 1){
+  //     (*n_right)++;
+  //   }
+  //   else{
+  //     (*n_left)++;
+  //   }
+  // }  
+
+  int nl = 0, nr = 0;
+  int idx = tid;
+  while(idx < sz){
+    if(sideArray[idx] == 1){
+      nr++;
+    }
+    else{
+      nl++;
+    }
+    idx += n_threads;    
+  }
+  __syncthreads();
+
+
+  nr = blockReduceSum<T>(nr);
+  if (tid == 0) *n_right = nr;
+
+  __syncthreads();
+
+  nl = blockReduceSum<T>(nl);
+  if (tid == 0) *n_left = nl;
+
+  __syncthreads();
+}
 
 struct Group{
   Group(int pos, int sz): pos(pos), sz(sz){}
@@ -1515,30 +1609,17 @@ __global__ void kernel_split(
     __syncthreads();
 
 
+    group_getSideCount<T>(tid, blockDim.x, sideArray_local, sz, nLeft_sm, nRight_sm);
+
+    __syncthreads();
+
     if(tid == 0){
 
-      // if(gid == 0) start_time = clock(); 
+      // group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
 
-      group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-
-      // if(gid == 0) {
-      //   stop_time = clock();
-      //   runtime = (int)(stop_time - start_time);
-      //   printf("group_getSideCount()  dt: %d\n", runtime);
-
-      // }
-
-      // if(gid == 0) start_time = clock(); 
       if (_split_imbalance(*nLeft_sm, *nRight_sm) < 0.95) {
         *isBalanced_sm = 1;
       }      
-
-      // if(gid == 0){
-      //   stop_time = clock();
-      //   runtime = (int)(stop_time - start_time);
-      //   printf("_split_imbalance()  dt: %d\n", runtime);      
-      // }
-
     } 
 
     __syncthreads();
@@ -1555,26 +1636,61 @@ __global__ void kernel_split(
   }
 
 
+
+
+  if(_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99){
+
+
+    int idx = tid;
+    while(idx < f){
+      splitVec_sm[idx] = 0;
+      idx += blockDim.x;
+    }
+    __syncthreads();
+    
+
+    while (_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99) {
+        
+      int idx = tid;
+      while(idx < sz){
+        sideArray_local[idx] = _random.flip();
+        idx += blockDim.x;
+      }
+      __syncthreads();
+      
+      group_getSideCount<T>(tid, blockDim.x, sideArray_local, sz, nLeft_sm, nRight_sm);
+      __syncthreads();
+    }
+
+    group_moveSide(indexArray_local, sideArray_local, sz);
+  }
+
+
+
+
+
+
+
   if(tid == 0){
 
-    if(_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99){
+    // if(_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99){
 
-      for (int z = 0; z < f; z++){
+    //   for (int z = 0; z < f; z++){
         
-        splitVec_sm[z] = 0;
-      }    
+    //     splitVec_sm[z] = 0;
+    //   }    
 
-      while (_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99) {
+    //   while (_split_imbalance(*nLeft_sm, *nRight_sm) > 0.99) {
 
-        for(int j = 0; j < sz; j++){
-          sideArray_local[j] = _random.flip();
-        }
+    //     for(int j = 0; j < sz; j++){
+    //       sideArray_local[j] = _random.flip();
+    //     }
 
-        group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
-      }
+    //     group_getSideCount(sideArray_local, sz, nLeft_sm, nRight_sm);
+    //   }
 
-      group_moveSide(indexArray_local, sideArray_local, sz);
-    }
+    //   group_moveSide(indexArray_local, sideArray_local, sz);
+    // }
 
 
 

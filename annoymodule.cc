@@ -414,11 +414,15 @@ py_an_get_item_vector(py_annoy *self, PyObject *args) {
 
 static PyObject* 
 py_an_add_item(py_annoy *self, PyObject *args, PyObject* kwargs) {
+  
   PyObject* v;
   int32_t item;
+  
   if (!self->ptr) 
     return NULL;
+  
   static char const * kwlist[] = {"i", "vector", NULL};
+  
   if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iO", (char**)kwlist, &item, &v))
     return NULL;
 
@@ -427,10 +431,13 @@ py_an_add_item(py_annoy *self, PyObject *args, PyObject* kwargs) {
   }
 
   vector<float> w(self->f);
+  
   if (!convert_list_to_vector(v, self->f, &w)) {
     return NULL;
   }
+
   char* error;
+  
   if (!self->ptr->add_item(item, &w[0], &error)) {
     PyErr_SetString(PyExc_Exception, error);
     free(error);

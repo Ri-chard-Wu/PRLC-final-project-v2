@@ -202,7 +202,7 @@ inline void two_means(const vector<Node*>& nodes, int f,
     assigned to it, so to balance it. 
   */
 
-  static int iteration_steps = 200;
+  int iteration_steps = 200;
   size_t count = nodes.size();
 
   size_t i = random.index(count);
@@ -893,11 +893,41 @@ public:
 
   int GPU_BUILD_MAX_ITEM_NUM = 1000000;
 
+
+
+
   void gpu_build(int n_tree, BuildPolicy& bp){
+    
+    // require that GPU_BUILD_MAX_ITEM_NUM > step_size in order to have overlap.
+    
+    // int step_size = _n_items / n_tree;
 
     
+    // for(int i = 0; i < _n_items; ){
+
+    //   int item_start = i;  
+    //   if(i + step_size < _n_items){
+    //     i += step_size;
+    //   }
+    //   else{
+    //     i += _n_items - i;
+    //   }
+
+    //   int item_end;
+    //   if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
+    //     item_end += GPU_BUILD_MAX_ITEM_NUM - 1;
+    //   }
+    //   else{
+    //     item_end = _n_items - 1;
+    //   }
+
+    // }
+
+    int n_batch = 0;
 
     for(int i = 0; i < _n_items; ){
+
+      n_batch++;
 
       int item_start = i;
       if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
@@ -954,7 +984,123 @@ public:
       printf("%d / %d\n\n", item_end + 1, _n_items);
       cudaFree(vecArray_dev);
     }
+
+    combine_trees(n_tree, n_batch);
   }
+
+
+  void combine_trees(int n_tree, int n_batch){
+
+
+    Random _random;
+
+    if(n_batch == 1) return;
+    
+    vector<S> children;
+
+    for(int i = 0; i < n_tree; i++){
+
+      for(int j = 0; j < n_batch; i++){
+
+        children.push_back(_roots[j * n_tree + i]);
+
+        _roots[i].push_back(_make_tree(children, _random));
+      }
+
+      children.clear();
+    }
+
+
+    _roots.resize(n_tree);
+   
+  }
+
+
+
+
+
+
+  S _make_tree(const vector<S>& indices, Random& _random) {
+    
+    
+    if (indices.size() == 1)
+      return indices[0];
+
+    // if (indices.size() <= (size_t)_K && (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
+
+    //   _allocate_size(_n_nodes + 1,);
+    //   S item = _n_nodes++;
+
+    //   Node* m = _get(item);
+    //   m->n_descendants = is_root ? _n_items : (S)indices.size();
+
+
+    //   if (!indices.empty())
+    //     memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+
+    //   return item;
+    // }
+
+
+    vector<Node*> children;
+    for (size_t i = 0; i < indices.size(); i++) {
+      S j = indices[i];
+      Node* n = _get(j);
+      children.push_back(n);
+    }
+    
+
+    vector<S> children_indices[2];
+    Node* m = (Node*)alloca(_s);
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+
+      children_indices[0].clear();
+      children_indices[1].clear();
+      D::create_split(children, _f, _s, _random, m);
+
+      for (size_t i = 0; i < indices.size(); i++) {
+        S j = indices[i];
+        Node* n = _get(j);
+        if (n) {
+          bool side = D::side(m, n->v, _f, _random);
+          children_indices[side].push_back(j);
+        }
+      }
+
+      if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
+        break;
+    }
+
+
+    // If we didn't find a hyperplane, just randomize sides as a last option
+    while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
+
+      children_indices[0].clear();
+      children_indices[1].clear();
+
+      for (int z = 0; z < _f; z++) m->v[z] = 0;
+
+      for (size_t i = 0; i < indices.size(); i++) {
+        children_indices[_random.flip()].push_back(indices[i]);
+      }
+    }
+
+
+    m->n_descendants = (S)indices.size();
+    for (int side = 0; side < 2; side++) {
+      m->children[side] = _make_tree(children_indices[side], _random);
+    }
+
+    _allocate_size(_n_nodes + 1);
+    S item = _n_nodes++;
+    memcpy(_get(item), m, _s);
+
+    return item;
+  }
+
+
+
 
 
 
@@ -1037,13 +1183,13 @@ public:
       q.push(make_pair(Distance::template pq_initial_value<T>(), _roots[i]));
     }
 
+
     std::vector<S> nns;
     
     while (nns.size() < (size_t)search_k && !q.empty()) {
       
       const pair<T, S>& top = q.top();
       T d = top.first;
-
       S i = top.second;
       Node* nd = _get(i);
       q.pop();
@@ -1174,7 +1320,7 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
   
   
 
-  static int iteration_steps = 200;
+  int iteration_steps = 200;
   size_t count, i, j;
 
   if(tid == 0){
@@ -1258,8 +1404,8 @@ void create_split(int tid, int n_threads, S *indexArray, int sz, T *vecArray,
                              random, true, p, q, sm);
   __syncthreads();                             
 
-  int idx = tid;
-  while(idx < f){
+  int idx = tid; 
+  while(idx < f){ 
     splitVec[idx] = p[idx] - q[idx]; 
     idx += n_threads;
   }
@@ -1973,6 +2119,8 @@ public:
 
 class AnnoyIndexGPUBuildPolicy {
 public:
+
+  
   
   template<typename S, typename T, typename D, typename Random>
   static void build(AnnoyIndex<S, T, D, Random, 
@@ -1983,7 +2131,10 @@ public:
   }
 };
 
+  // template<typename S, typename T>
+  // void combine_trees(){
 
+  // }
 
 }
 

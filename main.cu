@@ -15,10 +15,12 @@
 int f = 786;
 int n = 1000000;
 int n_trees = 5;
-char *filename = "AnnoyGPU-1e6.tree";
+char *load_filename = "AnnoyGPU-1e6.tree";
 
-int search_multiplier = 20;
-int GPU_BUILD_MAX_ITEM_NUM = 500000;
+// char *fill_filename = "AnnoyGPU-1e7.tree";
+
+int search_multiplier = 1;
+int GPU_BUILD_MAX_ITEM_NUM = 250000;
 
 
 
@@ -398,11 +400,6 @@ limit: 10000    precision: 39.00%       avg. time: 0.309640s
 */
 
 
-
-
-
-
-
 // -------------------------------------------
 // gpu, create_split() no parallel, 1e6 nodes, 5 trees: Done in 25 secs.
 // gpu, create_split() with parallel, 1e6 nodes, 5 trees: Done in 22 secs.
@@ -410,13 +407,11 @@ limit: 10000    precision: 39.00%       avg. time: 0.309640s
 int main(int argc, char **argv) {
 
 
-	// fill_item("AnnoyGPU-5e6.tree", f, n);
+	// fill_item(fill_filename, f, n);
 	
 	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
-	load_item(t, filename, n);
-
+	load_item(t, load_filename, n);
 	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
-
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);
 

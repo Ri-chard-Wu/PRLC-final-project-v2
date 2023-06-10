@@ -3,7 +3,10 @@
 rm main
 # rm AnnoyGPU.tree
 # rm compile.log
-nvcc -o main main.cu #2> compile.log
+
+annoy_build_flag=${1}_BUILD
+
+nvcc -o main main.cu -D${annoy_build_flag} #2> compile.log
 # code compile.log
 
 # rm run.log

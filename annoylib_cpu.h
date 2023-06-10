@@ -1365,6 +1365,7 @@ protected:
       if (n)
         children.push_back(n);
     }
+    
 
     vector<S> children_indices[2];
     Node* m = (Node*)alloca(_s);

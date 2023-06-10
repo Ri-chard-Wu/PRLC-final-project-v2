@@ -61,15 +61,16 @@ int fill_item(char *filename, int f=40, int n=1000000){
 }
 
 
-void load_item(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, char *filename, int n){
+template<typename BuildPolicy>
+void load_item(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, char *filename, int n){
 	
 	// t.load(filename);
 	t.load_items(filename, n);
 
 }
 
-
-void build_index(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, int n_trees){
+template<typename BuildPolicy>
+void build_index(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, int n_trees){
 
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
@@ -91,8 +92,8 @@ void build_index(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuil
 }
 
 
-
-int precision_test(AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy>& t, 
+template<typename BuildPolicy>
+int precision_test(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, 
 			int f=40, int n=1000000, int n_trees=80){
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
@@ -458,7 +459,31 @@ int main(int argc, char **argv) {
 
 	// fill_item(fill_filename, f, n);
 	
-	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
+
+
+#if defined(GPU_BUILD)
+	
+	printf("GPU_BUILD\n");
+	
+	AnnoyIndex<int, float, Angular, 
+			Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);	
+
+#elif defined(CPU_BUILD)
+	
+	printf("CPU_BUILD\n");
+	
+	AnnoyIndex<int, float, Angular, 
+			Kiss32Random, AnnoyIndexSingleThreadedBuildPolicy> t(f);
+
+#else
+
+	printf("Default CPU_BUILD\n");
+
+	AnnoyIndex<int, float, Angular, 
+			Kiss32Random, AnnoyIndexSingleThreadedBuildPolicy> t(f);
+
+#endif
+
 	load_item(t, load_filename, n);
 	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
 	build_index(t, n_trees);

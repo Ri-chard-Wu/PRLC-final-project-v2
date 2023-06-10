@@ -888,12 +888,54 @@ public:
   }
 
   
-  // virtual void thread_build(int q, int thread_idx) = 0;
+
+
+  void thread_build(int q, int thread_idx, BuildPolicy& threaded_build_policy) {
+    // Each thread needs its own seed, otherwise each thread would be building the same tree(s)
+    Random _random(_seed + thread_idx);
+
+    vector<S> thread_roots;
+    int tree_count = 0;
+    while (1) {
+      if (q == -1) {
+        threaded_build_policy.lock_n_nodes();
+        if (_n_nodes >= 2 * _n_items) {
+          threaded_build_policy.unlock_n_nodes();
+          break;
+        }
+        threaded_build_policy.unlock_n_nodes();
+      } else {
+        if (thread_roots.size() >= (size_t)q) {
+          break;
+        }
+      }
+
+      if (_verbose) annoylib_showUpdate("pass %zd...\n", thread_roots.size());
+
+      vector<S> indices;
+      threaded_build_policy.lock_shared_nodes();
+      for (S i = 0; i < _n_items; i++) {
+        if (_get(i)->n_descendants >= 1) { // Issue #223
+          indices.push_back(i);
+        }
+      }
+      threaded_build_policy.unlock_shared_nodes();
+
+      thread_roots.push_back(_make_tree(indices, true, _random, threaded_build_policy));
+      tree_count++;
+      printf("n trees built: %d / %d\n", tree_count, q);      
+    }
+
+    threaded_build_policy.lock_roots();
+    _roots.insert(_roots.end(), thread_roots.begin(), thread_roots.end());
+    threaded_build_policy.unlock_roots();
+  }
+
+
+
 
 
   int GPU_BUILD_MAX_ITEM_NUM = 1000000;
-
-
 
 
   void gpu_build(int n_tree, BuildPolicy& bp){
@@ -1056,50 +1098,148 @@ public:
 
 
 
-  void combine_trees(int n_tree, int n_batch){
+  // void combine_trees(int n_tree, int n_batch){
 
 
-    Random _random;
+  //   Random _random;
 
-    if(n_batch == 1) return;
+  //   if(n_batch == 1) return;
     
-    vector<S> children;
+  //   vector<S> children;
 
-    for(int i = 0; i < n_tree; i++){
+  //   for(int i = 0; i < n_tree; i++){
 
-      for(int j = 0; j < n_batch; j++){
+  //     for(int j = 0; j < n_batch; j++){
 
-        children.push_back(_roots[j * n_tree + i]);
-      }
+  //       children.push_back(_roots[j * n_tree + i]);
+  //     }
 
-      _roots[i] = _make_tree(children, _random);
+  //     _roots[i] = _make_tree(children, _random);
 
-      children.clear();
-    }
+  //     children.clear();
+  //   }
 
 
-    _roots.resize(n_tree);
+  //   _roots.resize(n_tree);
    
-  }
+  // }
 
 
 
-
-
-
-  S _make_tree(const vector<S>& indices, Random& _random) {
+  // S _make_tree(const vector<S>& indices, Random& _random) {
     
-    // printf("indices: %d\n", indices.size());
+  //   // printf("indices: %d\n", indices.size());
     
-    if (indices.size() == 1)
+  //   if (indices.size() == 1)
+  //     return indices[0];
+
+  //   // printf("a\n");
+
+
+  //   vector<Node*> children;
+  //   for (size_t i = 0; i < indices.size(); i++) {
+  //     children.push_back(_get(indices[i]));
+  //   }
+    
+
+  //   vector<S> children_indices[2];
+  //   Node* m = (Node*)alloca(_s);
+
+  //   for (int attempt = 0; attempt < 3; attempt++) {
+
+  //     children_indices[0].clear();
+  //     children_indices[1].clear();
+  //     D::create_split(children, _f, _s, _random, m);
+
+  //     for (size_t i = 0; i < indices.size(); i++) {
+  //       S j = indices[i];
+  //       Node* n = _get(j);
+  //       if (n) {
+  //         bool side = D::side(m, n->v, _f, _random);
+  //         children_indices[side].push_back(j);
+  //       }
+  //     }
+
+  //     if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
+  //       break;
+  //   }
+
+
+  //   // If we didn't find a hyperplane, just randomize sides as a last option
+  //   while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
+
+  //     children_indices[0].clear();
+  //     children_indices[1].clear();
+
+  //     for (int z = 0; z < _f; z++) m->v[z] = 0;
+
+  //     for (size_t i = 0; i < indices.size(); i++) {
+  //       children_indices[_random.flip()].push_back(indices[i]);
+  //     }
+  //   }
+
+
+
+  //   int n_descendants = 0;
+  //   for(int i = 0; i < indices.size(); i++){
+  //     n_descendants += _get(indices[i])->n_descendants;
+  //   }
+  //   m->n_descendants = n_descendants;
+
+    
+
+  //   for (int side = 0; side < 2; side++) {
+  //     m->children[side] = _make_tree(children_indices[side], _random);
+  //   }
+
+  //   _allocate_size(_n_nodes + 1);
+  //   S item = _n_nodes++;
+  //   memcpy(_get(item), m, _s);
+
+  //   return item;
+  // }
+
+
+
+
+
+  S _make_tree(const vector<S>& indices, bool is_root, Random& _random, BuildPolicy& threaded_build_policy) {
+    // The basic rule is that if we have <= _K items, then it's a leaf node, otherwise it's a split node.
+    // There's some regrettable complications caused by the problem that root nodes have to be "special":
+    // 1. We identify root nodes by the arguable logic that _n_items == n->n_descendants, regardless of how many descendants they actually have
+    // 2. Root nodes with only 1 child need to be a "dummy" parent
+    // 3. Due to the _n_items "hack", we need to be careful with the cases where _n_items <= _K or _n_items > _K
+    if (indices.size() == 1 && !is_root)
       return indices[0];
 
-    // printf("a\n");
+    if (indices.size() <= (size_t)_K && (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
+      threaded_build_policy.lock_n_nodes();
+      _allocate_size(_n_nodes + 1, threaded_build_policy);
+      S item = _n_nodes++;
+      threaded_build_policy.unlock_n_nodes();
 
+      threaded_build_policy.lock_shared_nodes();
+      Node* m = _get(item);
+      m->n_descendants = is_root ? _n_items : (S)indices.size();
 
+      // Using std::copy instead of a loop seems to resolve issues #3 and #13,
+      // probably because gcc 4.8 goes overboard with optimizations.
+      // Using memcpy instead of std::copy for MSVC compatibility. #235
+      // Only copy when necessary to avoid crash in MSVC 9. #293
+      if (!indices.empty())
+        memcpy(m->children, &indices[0], indices.size() * sizeof(S));
+
+      threaded_build_policy.unlock_shared_nodes();
+      return item;
+    }
+
+    threaded_build_policy.lock_shared_nodes();
     vector<Node*> children;
     for (size_t i = 0; i < indices.size(); i++) {
-      children.push_back(_get(indices[i]));
+      S j = indices[i];
+      Node* n = _get(j);
+      if (n)
+        children.push_back(n);
     }
     
 
@@ -1107,6 +1247,8 @@ public:
     Node* m = (Node*)alloca(_s);
 
     for (int attempt = 0; attempt < 3; attempt++) {
+
+    //   printf("attempt: %d\n", attempt);
 
       children_indices[0].clear();
       children_indices[1].clear();
@@ -1118,49 +1260,55 @@ public:
         if (n) {
           bool side = D::side(m, n->v, _f, _random);
           children_indices[side].push_back(j);
+        } else {
+          annoylib_showUpdate("No node for index %d?\n", j);
         }
       }
 
       if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
         break;
     }
-
+    threaded_build_policy.unlock_shared_nodes();
 
     // If we didn't find a hyperplane, just randomize sides as a last option
     while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
+      if (_verbose)
+        annoylib_showUpdate("\tNo hyperplane found (left has %ld children, right has %ld children)\n",
+          children_indices[0].size(), children_indices[1].size());
 
       children_indices[0].clear();
       children_indices[1].clear();
 
-      for (int z = 0; z < _f; z++) m->v[z] = 0;
+      // Set the vector to 0.0
+      for (int z = 0; z < _f; z++)
+        m->v[z] = 0;
 
       for (size_t i = 0; i < indices.size(); i++) {
-        children_indices[_random.flip()].push_back(indices[i]);
+        S j = indices[i];
+        // Just randomize...
+        children_indices[_random.flip()].push_back(j);
       }
     }
 
+    int flip = (children_indices[0].size() > children_indices[1].size());
 
-
-    int n_descendants = 0;
-    for(int i = 0; i < indices.size(); i++){
-      n_descendants += _get(indices[i])->n_descendants;
-    }
-    m->n_descendants = n_descendants;
-
-    
-
+    m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
-      m->children[side] = _make_tree(children_indices[side], _random);
+      // run _make_tree for the smallest child first (for cache locality)
+      m->children[side^flip] = _make_tree(children_indices[side^flip], false, _random, threaded_build_policy);
     }
 
-    _allocate_size(_n_nodes + 1);
+    threaded_build_policy.lock_n_nodes();
+    _allocate_size(_n_nodes + 1, threaded_build_policy);
     S item = _n_nodes++;
+    threaded_build_policy.unlock_n_nodes();
+
+    threaded_build_policy.lock_shared_nodes();
     memcpy(_get(item), m, _s);
+    threaded_build_policy.unlock_shared_nodes();
 
     return item;
   }
-
-
 
 
 
@@ -1188,6 +1336,14 @@ public:
   }
 
 
+
+  void _allocate_size(S n, BuildPolicy& threaded_build_policy) {
+    if (n > _nodes_size) {
+      threaded_build_policy.lock_nodes();
+      _reallocate_nodes(n);
+      threaded_build_policy.unlock_nodes();
+    }
+  }
 
 
   void _allocate_size(S n) {
@@ -2190,12 +2346,112 @@ public:
     AnnoyIndexGPUBuildPolicy build_policy;
     annoy->gpu_build(q, build_policy);
   }
+
+  void lock_n_nodes() {}
+  void unlock_n_nodes() {}
+
+  void lock_nodes() {}
+  void unlock_nodes() {}
+
+  void lock_shared_nodes() {}
+  void unlock_shared_nodes() {}
+
+  void lock_roots() {}
+  void unlock_roots() {}
+
 };
 
-  // template<typename S, typename T>
-  // void combine_trees(){
 
-  // }
+
+class AnnoyIndexSingleThreadedBuildPolicy {
+public:
+  template<typename S, typename T, typename D, typename Random>
+  static void build(AnnoyIndex<S, T, D, Random, AnnoyIndexSingleThreadedBuildPolicy>* annoy, int q, int n_threads) {
+    AnnoyIndexSingleThreadedBuildPolicy threaded_build_policy;
+    annoy->thread_build(q, 0, threaded_build_policy);
+  }
+
+  void lock_n_nodes() {}
+  void unlock_n_nodes() {}
+
+  void lock_nodes() {}
+  void unlock_nodes() {}
+
+  void lock_shared_nodes() {}
+  void unlock_shared_nodes() {}
+
+  void lock_roots() {}
+  void unlock_roots() {}
+};
+
+
+#ifdef ANNOYLIB_MULTITHREADED_BUILD
+class AnnoyIndexMultiThreadedBuildPolicy {
+private:
+  std::shared_timed_mutex nodes_mutex;
+  std::mutex n_nodes_mutex;
+  std::mutex roots_mutex;
+
+public:
+  template<typename S, typename T, typename D, typename Random>
+  static void build(AnnoyIndex<S, T, D, Random, AnnoyIndexMultiThreadedBuildPolicy>* annoy, int q, int n_threads) {
+    AnnoyIndexMultiThreadedBuildPolicy threaded_build_policy;
+    if (n_threads == -1) {
+      // If the hardware_concurrency() value is not well defined or not computable, it returns 0.
+      // We guard against this by using at least 1 thread.
+      n_threads = std::max(1, (int)std::thread::hardware_concurrency());
+    }
+
+    vector<std::thread> threads(n_threads);
+
+    for (int thread_idx = 0; thread_idx < n_threads; thread_idx++) {
+      int trees_per_thread = q == -1 ? -1 : (int)floor((q + thread_idx) / n_threads);
+
+      threads[thread_idx] = std::thread(
+        &AnnoyIndex<S, T, D, Random, AnnoyIndexMultiThreadedBuildPolicy>::thread_build,
+        annoy,
+        trees_per_thread,
+        thread_idx,
+        std::ref(threaded_build_policy)
+      );
+    }
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  }
+
+  void lock_n_nodes() {
+    n_nodes_mutex.lock();
+  }
+  void unlock_n_nodes() {
+    n_nodes_mutex.unlock();
+  }
+
+  void lock_nodes() {
+    nodes_mutex.lock();
+  }
+  void unlock_nodes() {
+    nodes_mutex.unlock();
+  }
+
+  void lock_shared_nodes() {
+    nodes_mutex.lock_shared();
+  }
+  void unlock_shared_nodes() {
+    nodes_mutex.unlock_shared();
+  }
+
+  void lock_roots() {
+    roots_mutex.lock();
+  }
+  void unlock_roots() {
+    roots_mutex.unlock();
+  }
+};
+#endif
+
+
 
 }
 

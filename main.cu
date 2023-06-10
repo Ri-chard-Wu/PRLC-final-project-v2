@@ -15,9 +15,11 @@
 int f = 786;
 int n = 1000000;
 int n_trees = 5;
-char *load_filename = "AnnoyGPU-1e6.tree";
 
-// char *fill_filename = "AnnoyGPU-1e5.tree";
+// char *load_filename = "AnnoyGPU-1e6.tree";
+char *load_filename = "test-1e6.tree";
+
+// char *fill_filename = "test-1e6.tree";
 
 int search_multiplier = 1;
 int GPU_BUILD_MAX_ITEM_NUM = 250000;
@@ -26,17 +28,18 @@ int GPU_BUILD_MAX_ITEM_NUM = 250000;
 using namespace Annoy;
 
 
-int fill_item(char *filename, int f=40, int n=1000000){
+int fill_items(char *filename, int f, int n){
 
 	AnnoyIndex<int, float, Angular, Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);
 
 	std::default_random_engine generator;
 
-	t.on_disk_build(filename);
+	t.fill_items(filename);
 	
 	for(int i = 0; i < n; ++i){ // n: number of vectors
 
 		float *vec = (float *) malloc( f * sizeof(float) );
+
 
 		float mean = 0.0;
 		float std = 1.0;		
@@ -48,6 +51,7 @@ int fill_item(char *filename, int f=40, int n=1000000){
 
 		t.add_item(i, vec);
 
+
 		if(i % 1024 == 0){
 			std::cout << "Loading objects ...\t object: "
 					<< i+1 
@@ -57,12 +61,15 @@ int fill_item(char *filename, int f=40, int n=1000000){
 					<< (float) i / (float)(n + 1) * 100 
 					<< "%\r";		
 		}	  
+
 	}
+
+	t.save_items();
 }
 
 
 template<typename BuildPolicy>
-void load_item(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, char *filename, int n){
+void load_items(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, char *filename, int n){
 	
 	// t.load(filename);
 	t.load_items(filename, n);
@@ -457,7 +464,7 @@ limit: 10000    precision: 13.00%      avg. time: 0.014800s
 int main(int argc, char **argv) {
 
 
-	// fill_item(fill_filename, f, n);
+	// fill_items(fill_filename, f, n);
 	
 
 
@@ -484,7 +491,7 @@ int main(int argc, char **argv) {
 
 #endif
 
-	load_item(t, load_filename, n);
+	load_items(t, load_filename, n);
 	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
 	build_index(t, n_trees);
 	precision_test(t, f, n, n_trees);

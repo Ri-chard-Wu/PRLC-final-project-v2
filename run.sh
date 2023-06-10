@@ -22,6 +22,11 @@
 #----------------------------------
 
 
-rm compile.log
-nvcc --shared -o annoy.so annoymodule.cu --compiler-options '-fPIC' -I/usr/include/python3.6 2> compile.log
-code compile.log
+cd ~/fnlPrj/annoy/src
+rm ./annoy/annoylib.so
+# rm compile.log
+nvcc --shared -o annoylib.so annoymodule.cu --compiler-options '-fPIC' -I/usr/include/python3.6 -DANNOYLIB_GPU_BUILD #2> compile.log
+# code compile.log
+mv annoylib.so ./annoy
+python3 main.py
+

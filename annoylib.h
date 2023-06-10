@@ -409,7 +409,7 @@ class AnnoyIndexGPUBuildPolicy;
 typedef unsigned char BYTE;
 typedef unsigned int WORD;
 
-template<typename S, typename T, typename R = uint64_t>
+template<typename S, typename T, typename R = uint32_t>
 class AnnoyIndexInterface {
  public:
   // Note that the methods with an **error argument will allocate memory and write the pointer to that string if error is non-NULL
@@ -2343,6 +2343,8 @@ public:
   static void build(AnnoyIndex<S, T, D, Random, 
             AnnoyIndexGPUBuildPolicy>* annoy, int q, int n_threads) {
 
+    printf("GPU build\n");
+
     AnnoyIndexGPUBuildPolicy build_policy;
     annoy->gpu_build(q, build_policy);
   }
@@ -2397,6 +2399,9 @@ public:
   static void build(AnnoyIndex<S, T, D, Random, AnnoyIndexMultiThreadedBuildPolicy>* annoy, int q, int n_threads) {
     AnnoyIndexMultiThreadedBuildPolicy threaded_build_policy;
     if (n_threads == -1) {
+
+      
+
       // If the hardware_concurrency() value is not well defined or not computable, it returns 0.
       // We guard against this by using at least 1 thread.
       n_threads = std::max(1, (int)std::thread::hardware_concurrency());

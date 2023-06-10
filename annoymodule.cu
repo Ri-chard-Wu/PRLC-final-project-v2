@@ -56,11 +56,14 @@ typedef signed __int32    int32_t;
 
 using namespace Annoy;
 
-#ifdef ANNOYLIB_MULTITHREADED_BUILD
+#if defined(ANNOYLIB_MULTITHREADED_BUILD)
   typedef AnnoyIndexMultiThreadedBuildPolicy AnnoyIndexThreadedBuildPolicy;
+#elif defined(ANNOYLIB_GPU_BUILD)
+  typedef AnnoyIndexGPUBuildPolicy AnnoyIndexThreadedBuildPolicy;
 #else
   typedef AnnoyIndexSingleThreadedBuildPolicy AnnoyIndexThreadedBuildPolicy;
 #endif
+
 
 template class Annoy::AnnoyIndexInterface<int32_t, float>;
 
@@ -152,10 +155,10 @@ py_an_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
     // This keeps coming up, see #368 etc
     PyErr_WarnEx(PyExc_FutureWarning, "The default argument for metric will be removed "
 		 "in future version of Annoy. Please pass metric='angular' explicitly.", 1);
-    self->ptr = new AnnoyIndex<int32_t, float, Angular, Kiss64Random, AnnoyIndexThreadedBuildPolicy>(self->f);
+    self->ptr = new AnnoyIndex<int32_t, float, Angular, Kiss32Random, AnnoyIndexThreadedBuildPolicy>(self->f);
   } 
   else if (!strcmp(metric, "angular")) {
-   self->ptr = new AnnoyIndex<int32_t, float, Angular, Kiss64Random, AnnoyIndexThreadedBuildPolicy>(self->f);
+   self->ptr = new AnnoyIndex<int32_t, float, Angular, Kiss32Random, AnnoyIndexThreadedBuildPolicy>(self->f);
   } 
   // else if (!strcmp(metric, "euclidean")) {
   //   self->ptr = new AnnoyIndex<int32_t, float, Euclidean, Kiss64Random, AnnoyIndexThreadedBuildPolicy>(self->f);

@@ -897,31 +897,7 @@ public:
 
 
   void gpu_build(int n_tree, BuildPolicy& bp){
-    
-    // require that GPU_BUILD_MAX_ITEM_NUM > step_size in order to have overlap.
-    
-    // int step_size = _n_items / n_tree;
 
-    
-    // for(int i = 0; i < _n_items; ){
-
-    //   int item_start = i;  
-    //   if(i + step_size < _n_items){
-    //     i += step_size;
-    //   }
-    //   else{
-    //     i += _n_items - i;
-    //   }
-
-    //   int item_end;
-    //   if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
-    //     item_end += GPU_BUILD_MAX_ITEM_NUM - 1;
-    //   }
-    //   else{
-    //     item_end = _n_items - 1;
-    //   }
-
-    // }
 
     int n_batch = 0;
 
@@ -985,8 +961,99 @@ public:
       cudaFree(vecArray_dev);
     }
 
-    combine_trees(n_tree, n_batch);
+    // combine_trees(n_tree, n_batch);
   }
+
+
+
+
+
+
+  // void gpu_build(int n_tree, BuildPolicy& bp){
+    
+  //   // require that GPU_BUILD_MAX_ITEM_NUM > step_size in order to have overlap.
+
+  //   // require that GPU_BUILD_MAX_ITEM_NUM > step_size.
+    
+  //   n_tree *= 2;
+
+  //   int step_size = _n_items / n_tree;
+
+  //   if(step_size > GPU_BUILD_MAX_ITEM_NUM){
+  //     printf("[gpu_build()] step_size > GPU_BUILD_MAX_ITEM_NUM. Abort...\n");
+  //     exit(1);
+  //   }
+
+
+  //   int item_start = 0;  
+  //   int item_end = 0;
+  //   int n_trees_built = 0;
+
+  //   while(item_end != _n_items - 1){
+
+  //     if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
+  //       item_end = item_start + GPU_BUILD_MAX_ITEM_NUM - 1;
+  //     }
+  //     else{
+  //       item_end = _n_items - 1;
+  //     }
+
+  //     // ---------------------------------
+
+  //     T *vecArray_dev, *vecArray_host;
+
+  //     int n_items = item_end - item_start + 1;
+  //     cudaMalloc(&vecArray_dev, n_items * _f * sizeof(T));
+  //     vecArray_host = new T[n_items * _f];
+  
+  //     for(int i = 0; i < n_items; i++){
+
+  //       int item = item_start + i;
+  //       Node *node = _get(item);
+        
+  //       for(int z = 0; z < _f; z++){
+  //         vecArray_host[i * _f + z] = node->v[z];
+  //       }
+  //     }
+
+  //     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
+  //                     n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
+  //     delete [] vecArray_host;
+
+  //     // ---------------------------------
+
+      
+
+
+  //     GPUStreamBuilder<S, T, D, Random> *gb =\
+  //             new GPUStreamBuilder<S, T, D, Random>(this, 
+  //                         vecArray_dev, item_start, item_end);
+
+  //     while(!gb->is_done()){ 
+
+  //       gb->one_step(); 
+  //       gb->wait(); 
+  //     }
+
+  //     n_trees_built++;
+  //     printf("n trees built: %d / %d\n", n_trees_built,  n_tree);
+  //     delete gb;
+      
+
+  //     // printf("%d / %d\n\n", item_end + 1, _n_items);
+  //     cudaFree(vecArray_dev);
+
+
+  //     // if(item_end < GPU_BUILD_MAX_ITEM_NUM - 1) break;
+
+  //     item_start += step_size;
+  //     // item_end = (item_start + GPU_BUILD_MAX_ITEM_NUM - 1) % _n_items;
+  //   }
+
+  // }
+
+
+
 
 
   void combine_trees(int n_tree, int n_batch){
@@ -1000,12 +1067,12 @@ public:
 
     for(int i = 0; i < n_tree; i++){
 
-      for(int j = 0; j < n_batch; i++){
+      for(int j = 0; j < n_batch; j++){
 
         children.push_back(_roots[j * n_tree + i]);
-
-        _roots[i].push_back(_make_tree(children, _random));
       }
+
+      _roots[i] = _make_tree(children, _random);
 
       children.clear();
     }
@@ -1022,31 +1089,17 @@ public:
 
   S _make_tree(const vector<S>& indices, Random& _random) {
     
+    // printf("indices: %d\n", indices.size());
     
     if (indices.size() == 1)
       return indices[0];
 
-    // if (indices.size() <= (size_t)_K && (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
-
-    //   _allocate_size(_n_nodes + 1,);
-    //   S item = _n_nodes++;
-
-    //   Node* m = _get(item);
-    //   m->n_descendants = is_root ? _n_items : (S)indices.size();
-
-
-    //   if (!indices.empty())
-    //     memcpy(m->children, &indices[0], indices.size() * sizeof(S));
-
-    //   return item;
-    // }
+    // printf("a\n");
 
 
     vector<Node*> children;
     for (size_t i = 0; i < indices.size(); i++) {
-      S j = indices[i];
-      Node* n = _get(j);
-      children.push_back(n);
+      children.push_back(_get(indices[i]));
     }
     
 
@@ -1087,7 +1140,15 @@ public:
     }
 
 
-    m->n_descendants = (S)indices.size();
+
+    int n_descendants = 0;
+    for(int i = 0; i < indices.size(); i++){
+      n_descendants += _get(indices[i])->n_descendants;
+    }
+    m->n_descendants = n_descendants;
+
+    
+
     for (int side = 0; side < 2; side++) {
       m->children[side] = _make_tree(children_indices[side], _random);
     }

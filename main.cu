@@ -17,14 +17,10 @@ int n = 1000000;
 int n_trees = 5;
 char *load_filename = "AnnoyGPU-1e6.tree";
 
-// char *fill_filename = "AnnoyGPU-1e7.tree";
+// char *fill_filename = "AnnoyGPU-1e5.tree";
 
 int search_multiplier = 1;
 int GPU_BUILD_MAX_ITEM_NUM = 250000;
-
-
-
-
 
 
 using namespace Annoy;
@@ -327,20 +323,57 @@ int precision(int f=40, int n=1000000, int n_trees=80){
 /*
 gpu, 1e6, 5, no partition  -------------------------------------------
 
- Done in 20 secs.
-limit: 10       precision: 11.00%       avg. time: 0.000100s
-limit: 100      precision: 11.00%       avg. time: 0.000210s
-limit: 1000     precision: 12.00%       avg. time: 0.001930s
-limit: 10000    precision: 24.00%       avg. time: 0.019520s
+ Done in 22 secs.
+limit: 10       precision: 10.00%       avg. time: 0.000120s
+limit: 100      precision: 10.00%       avg. time: 0.000150s
+limit: 1000     precision: 10.00%       avg. time: 0.001350s
+limit: 10000    precision: 20.00%       avg. time: 0.013510s
 
 
-gpu, 1e6, 5, partition into 4 -------------------------------------------
+gpu, 1e6, 5, overlap batch sz 2e5, search 1x  -------------------------------------------
+
+ Done in 16 secs.
+limit: 10       precision: 7.00%        avg. time: 0.000110s
+limit: 100      precision: 8.00%        avg. time: 0.000240s
+limit: 1000     precision: 11.00%       avg. time: 0.001760s
+limit: 10000    precision: 24.00%       avg. time: 0.017590s
+
+
+gpu, 1e6, 5, partition into 4, search 1x, combine tree -------------------------------------------
 
  Done in 19 secs.
-limit: 10       precision: 4.00%        avg. time: 0.000130s
-limit: 100      precision: 5.00%        avg. time: 0.000300s
-limit: 1000     precision: 11.00%       avg. time: 0.001580s
-limit: 10000    precision: 21.00%       avg. time: 0.016340s
+limit: 10       precision: 3.00%        avg. time: 0.000100s
+limit: 100      precision: 4.00%        avg. time: 0.000150s
+limit: 1000     precision: 10.00%       avg. time: 0.001110s
+limit: 10000    precision: 15.00%       avg. time: 0.010370s
+
+
+gpu, 1e6, 5, partition into 4, search 1x, combine tree -------------------------------------------
+
+ Done in 19 secs.
+limit: 10       precision: 6.00%        avg. time: 0.000100s
+limit: 100      precision: 6.00%        avg. time: 0.000200s
+limit: 1000     precision: 10.00%       avg. time: 0.000960s
+limit: 10000    precision: 18.00%       avg. time: 0.010640s
+
+
+
+gpu, 1e6, 5, partition into 4, search 1x -------------------------------------------
+
+ Done in 20 secs.
+limit: 10       precision: 1.00%       avg. time: 0.000160s
+limit: 100      precision: 2.00%       avg. time: 0.000220s
+limit: 1000     precision: 4.00%       avg. time: 0.000920s
+limit: 10000    precision: 17.00%      avg. time: 0.010210s
+
+gpu, 1e6, 5, partition into 4, search 1x -------------------------------------------
+
+ Done in 19 secs.
+limit: 10       precision: 5.00%        avg. time: 0.000120s
+limit: 100      precision: 5.00%        avg. time: 0.000140s
+limit: 1000     precision: 10.00%       avg. time: 0.000890s
+limit: 10000    precision: 18.00%       avg. time: 0.009350s
+
 
 gpu, 1e6, 5, partition into 4, search 5x -------------------------------------------
 
@@ -379,16 +412,6 @@ limit: 100      precision: 10.00%       avg. time: 0.000210s
 limit: 1000     precision: 11.00%       avg. time: 0.002200s
 limit: 10000    precision: 17.00%       avg. time: 0.022570s
 
-
-gpu, 5e6, 5, no partition -------------------------------------
-
- Done in 125 secs.
-limit: 10       precision: 1.00%        avg. time: 0.000180s
-limit: 100      precision: 7.00%        avg. time: 0.000700s
-limit: 1000     precision: 12.00%       avg. time: 0.006390s
-limit: 10000    precision: 23.00%       avg. time: 0.066370s
-
-
 gpu, 5e6, 5, partition into 5, search 20x -------------------------------------------
 
  Done in 112 secs.
@@ -397,7 +420,33 @@ limit: 100      precision: 11.00%       avg. time: 0.003170s
 limit: 1000     precision: 16.00%       avg. time: 0.031250s
 limit: 10000    precision: 39.00%       avg. time: 0.309640s
 
+gpu, 5e6, 5, partition into 5, search 1x, combine tree -------------------------------------------
+
+ Done in 104 secs.
+limit: 10       precision: 2.00%        avg. time: 0.000110s
+limit: 100      precision: 2.00%        avg. time: 0.000210s
+limit: 1000     precision: 6.00%        avg. time: 0.001830s
+limit: 10000    precision: 10.00%       avg. time: 0.017830s
+
+gpu, 5e6, 5, partition into 5, search 1x, combine tree -------------------------------------------
+
+ Done in 103 secs.
+limit: 10       precision: 2.00%        avg. time: 0.000130s
+limit: 100      precision: 3.00%        avg. time: 0.000180s
+limit: 1000     precision: 6.00%        avg. time: 0.001720s
+limit: 10000    precision: 11.00%       avg. time: 0.015840s
+
+gpu, 5e6, 5, partition into 5, search 1x -------------------------------------------
+
+ Done in 98 secs.
+limit: 10       precision: 5.00%       avg. time: 0.000140s
+limit: 100      precision: 5.00%       avg. time: 0.000210s
+limit: 1000     precision: 9.00%       avg. time: 0.001410s
+limit: 10000    precision: 13.00%      avg. time: 0.014800s
+
 */
+
+
 
 
 // -------------------------------------------

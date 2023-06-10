@@ -16,7 +16,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <stddef.h>
-
+#include <string>
 
 
 #if defined(_MSC_VER) && _MSC_VER == 1500

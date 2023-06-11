@@ -1845,8 +1845,8 @@ public:
 
       cudaMalloc(&groupArray_next, 2 * sizeof(Group));
 
-      cudaMalloc(&splitVecArray, f * sizeof(T));
-      cudaMalloc(&sideCountArray, 2 * sizeof(int));
+      // cudaMalloc(&splitVecArray, f * sizeof(T));
+      // cudaMalloc(&sideCountArray, 2 * sizeof(int));
 
       n_group = 1;
     }
@@ -1908,16 +1908,14 @@ public:
 
     kd = new KernelData(annoy->_n_nodes, _f, _K, _n_items, vecArray_dev, indexArray);
 
-    childPtrArray = new S*[2 * kd->n_group];
-    childPtrArray[0] = &(m->children[0]);
-    childPtrArray[1] = &(m->children[1]);
+    parentIndexArray = new S[1];
+    parentIndexArray[0] = item;
 
     cudaEventCreate(&event_asyncCopy);
     cudaStreamCreate(&stream);
 
-
-    splitVecArray = new T[_f];
-    sideCountArray = new int[2];
+    // splitVecArray = new T[_f];
+    // sideCountArray = new int[2];
   }
 
 
@@ -1951,6 +1949,11 @@ public:
 
   void pipeline_LaunchAsync(){
     
+
+    cudaMalloc(&(kd->splitVecArray), kd->n_group * _f * sizeof(T));
+    cudaMalloc(&(kd->sideCountArray), kd->n_group * 2 * sizeof(int));
+
+
     int n_blocks = kd->n_group;
     int n_threads_per_block = 128;
     int sm_size = 3 * _f * sizeof(T) + 3 * sizeof(int) + \
@@ -1968,71 +1971,43 @@ public:
 
   void pipeline_postLaunchCopyAsync(){
 
+    splitVecArray = new T[_f * kd->n_group];
+    sideCountArray = new int[2 * kd->n_group];
+
     cudaMemcpy(splitVecArray, kd->splitVecArray, 
                     kd->n_group * _f * sizeof(T), cudaMemcpyDeviceToHost);
     cudaMemcpy(sideCountArray, kd->sideCountArray, 
                     kd->n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
 
-    // cudaEventRecord(event_asyncCopy, stream);
+    cudaEventRecord(event_asyncCopy, stream);
 
     cudaFree(kd->splitVecArray);
     cudaFree(kd->sideCountArray);
-    cudaMalloc(&(kd->splitVecArray), (2 * kd->n_group) * _f * sizeof(T));
-    cudaMalloc(&(kd->sideCountArray), (2 * kd->n_group) * 2 * sizeof(int));
+
   }
 
 
   // can set done.
   void pipeline_postLaunchUpdateSync(){
 
-    cudaFree(kd->groupArray);
-    kd->groupArray = kd->groupArray_next;
-    // cudaMalloc(&(kd->groupArray_next), kd->n_group * 4 * sizeof(Group));
-
-    updateTreeInternalNode();
-
-    delete [] splitVecArray;
-    delete [] sideCountArray;
-    splitVecArray = new T[_f * (2 * kd->n_group)];
-    sideCountArray = new int[2 * (2 * kd->n_group)];
-
-    // kd->n_group = kd->n_group * 2;
-  }
-
-
-  void updateTreeInternalNode(){
-
-  
-    int n_group = kd->n_group;
-
     S *parentIndexArray_next = new S[2 * n_group];
     int groupIdx_next = new int[2 * n_group];
 
-    int done_count = 0;
+    int n_group = kd->n_group;
     int n_group_next = 0;
 
     for(int group_i = 0; group_i < n_group; group_i++){
+
+      Node *p = annoy->_get(parentIndexArray[group_i]);
+      memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T));
   
       for(int i = 0; i < 2; i++){
 
-        if (sideCountArray[2 * group_i + i] == 1) { 
-
-          Node *p = _get(parentIndexArray[group_i]);
-          p->children[i] = item;
-
-          continue;
-        }
-        
-
         if (sideCountArray[2 * group_i + i] <= (int)_K) { 
 
-          done_count++;
-
           Group group;
-          cudaMemcpy(&group, kd->groupArray + (2 * group_i + i),
+          cudaMemcpy(&group, kd->groupArray_next + (2 * group_i + i),
                                     sizeof(Group), cudaMemcpyDeviceToHost);
-
-          Node *p = _get(parentIndexArray[group_i]);
 
           if (group.sz == 1){
             cudaMemcpy(&(p->children[i]), kd->indexArray + group.pos, 
@@ -2050,12 +2025,10 @@ public:
           continue;
         }
 
-
         annoy->_allocate_size(annoy->_n_nodes + 1);
         S item = annoy->_n_nodes++;
         Node* m = annoy->_get(item);
 
-        Node *p = _get(parentIndexArray[group_i]);
         p->children[i] = item;
 
         m->n_descendants = sideCountArray[2 * group_i + i]; 
@@ -2064,45 +2037,61 @@ public:
         groupIdx_next[n_group_next] = 2 * group_i + i;
         n_group_next++;
       }
-
-  
-      if(sideCountArray[2 * group_i] >= 0){ 
-        Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) 
-                                          - offsetof(Node, children));
-        memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T)); 
-      }
     }
 
-    kd->n_group = n_group_next;
-
-    Group *groupArray = new Group[n_group_next];
-
-    for(int i = 0; i < n_group_next; i++){
-      
-      group_i = groupIdx_next[i];
-      
-      cudaMemcpy(groupArray + i, kd->groupArray + group_i,
-         sizeof(Group), cudaMemcpyDeviceToHost);
-    }
-    
-    cudaFree(kd->groupArray);
-    cudaMalloc(&(kd->groupArray), n_group_next * sizeof(Group));
-    cudaMemcpy(kd->groupArray, groupArray,
-        n_group_next * sizeof(Group), cudaMemcpyDeviceToHost)
-    cudaMalloc(&(kd->groupArray_next), n_group_next * 2 * sizeof(Group));
-
+    delete [] splitVecArray;
+    delete [] sideCountArray;
 
 
     done = false;
+
     if(n_group_next == 0){
+
       done = true;
+      delete [] parentIndexArray;
       delete [] parentIndexArray_next;  
-      return;
+      cudaFree(kd->groupArray_next);
+      cudaFree(kd->groupArray);      
     }
-    
-    delete [] parentIndexArray;
-    parentIndexArray = parentIndexArray_next;
+    else{
+
+      if(n_group_next < n_group * 2){
+
+        Group *groupArray = new Group[n_group_next];
+
+        for(int i = 0; i < n_group_next; i++){
+          
+          group_i = groupIdx_next[i];
+          cudaMemcpy(groupArray + i, kd->groupArray_next + group_i,
+            sizeof(Group), cudaMemcpyDeviceToHost);
+        }
+        
+        delete [] groupIdx_next;
+        
+        cudaFree(kd->groupArray_next);
+        cudaFree(kd->groupArray);
+        cudaMalloc(&(kd->groupArray), n_group_next * sizeof(Group));
+        cudaMemcpy(kd->groupArray, groupArray,
+            n_group_next * sizeof(Group), cudaMemcpyDeviceToHost)
+        cudaMalloc(&(kd->groupArray_next), n_group_next * 2 * sizeof(Group));
+      }
+      else{
+        
+        cudaFree(kd->groupArray);
+        kd->groupArray = kd->groupArray_next;
+        cudaMalloc(&(kd->groupArray_next), n_group_next * 2 * sizeof(Group));
+      }
+
+      kd->n_group = n_group_next;
+
+      delete [] parentIndexArray;
+      parentIndexArray = parentIndexArray_next;
+    }
   }
+
+
+
+
 
 
 
@@ -2204,64 +2193,64 @@ public:
   }
 
 
-  void updateTreeLeafNode(){
+  // void updateTreeLeafNode(){
 
 
-    cudaMemcpy((BYTE *)indexArray, (BYTE *)(kd->indexArray), 
-                _n_items * sizeof(S), cudaMemcpyDeviceToHost);
+  //   cudaMemcpy((BYTE *)indexArray, (BYTE *)(kd->indexArray), 
+  //               _n_items * sizeof(S), cudaMemcpyDeviceToHost);
 
-    for(int i = 0; i < _n_items; i++) indexArray[i] += item_offset;
+  //   for(int i = 0; i < _n_items; i++) indexArray[i] += item_offset;
 
-    Group *groupArray = new Group[kd->n_group];
-    cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
-                kd->n_group * sizeof(Group), cudaMemcpyDeviceToHost);
+  //   Group *groupArray = new Group[kd->n_group];
+  //   cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
+  //               kd->n_group * sizeof(Group), cudaMemcpyDeviceToHost);
     
-    int n_group = kd->n_group;
+  //   int n_group = kd->n_group;
 
-    for(int i = 0; i < n_group; ){
+  //   for(int i = 0; i < n_group; ){
 
-      while(i + 1 <= n_group - 1){
+  //     while(i + 1 <= n_group - 1){
 
-        if(childPtrArray[i + 1] == childPtrArray[i]){
-          i++;
-        }
-        else{
-          break;
-        }
-      }
+  //       if(childPtrArray[i + 1] == childPtrArray[i]){
+  //         i++;
+  //       }
+  //       else{
+  //         break;
+  //       }
+  //     }
 
-      int offset = groupArray[i].pos;
-      int sz = groupArray[i].sz;
+  //     int offset = groupArray[i].pos;
+  //     int sz = groupArray[i].sz;
 
-      if(sz == 1){
-        *(childPtrArray[i]) = indexArray[offset];
-        continue;
-      }
-      else{
+  //     if(sz == 1){
+  //       *(childPtrArray[i]) = indexArray[offset];
+  //       continue;
+  //     }
+  //     else{
 
-        annoy->_allocate_size(annoy->_n_nodes + 1);
-        S item = annoy->_n_nodes++;
-        Node* m = annoy->_get(item);
-        m->n_descendants = (S)sz;
-        memcpy(m->children, indexArray + offset, sz * sizeof(S));     
-        *(childPtrArray[i]) = item;   
-      }
+  //       annoy->_allocate_size(annoy->_n_nodes + 1);
+  //       S item = annoy->_n_nodes++;
+  //       Node* m = annoy->_get(item);
+  //       m->n_descendants = (S)sz;
+  //       memcpy(m->children, indexArray + offset, sz * sizeof(S));     
+  //       *(childPtrArray[i]) = item;   
+  //     }
 
-      i++;
-    }
+  //     i++;
+  //   }
 
-    delete [] groupArray;
-  }
+  //   delete [] groupArray;
+  // }
               
 
 
   ~GPUStreamBuilder(){
 
-    updateTreeLeafNode();
+    // updateTreeLeafNode();
 
     cudaFree(kd->indexArray);
     cudaFree(kd->sideArray);
-    cudaFree(kd->groupArray);
+    // cudaFree(kd->groupArray);
 
     delete kd;
 
@@ -2277,7 +2266,8 @@ public:
   S _K, _n_items;
 
   bool done = false;
-  S **childPtrArray;
+  // S **childPtrArray;
+  S *parentIndexArray;
   T *splitVecArray;
   int *sideCountArray;
 

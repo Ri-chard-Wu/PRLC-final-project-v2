@@ -211,6 +211,42 @@ static PyMemberDef py_annoy_members[] = {
 
 
 
+
+static PyObject *
+py_an_save_items(py_annoy *self) {
+
+  if (!self->ptr) 
+    return NULL;
+
+  self->ptr->save_items();
+
+  Py_RETURN_NONE;
+}
+
+
+
+
+static PyObject *
+py_an_fill_items(py_annoy *self, PyObject *args, PyObject *kwargs) {
+
+  char *filename;
+
+  if (!self->ptr) 
+    return NULL;
+
+  static char const * kwlist[] = {"fn", NULL};
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", (char**)kwlist, &filename))
+    return NULL;
+
+  self->ptr->fill_items(filename);
+
+  Py_RETURN_NONE;
+}
+
+
+
+
+
 static PyObject *
 py_an_load_items(py_annoy *self, PyObject *args, PyObject *kwargs) {
 
@@ -337,10 +373,12 @@ bool check_constraints(py_annoy *self, int32_t item, bool building) {
   if (item < 0) {
     PyErr_SetString(PyExc_IndexError, "Item index can not be negative");
     return false;
-  } else if (!building && item >= self->ptr->get_n_items()) {
+  } 
+  else if (!building && item >= self->ptr->get_n_items()) {
     PyErr_SetString(PyExc_IndexError, "Item index larger than the largest item index");
     return false;
-  } else {
+  } 
+  else {
     return true;
   }
 }
@@ -635,6 +673,9 @@ py_an_set_seed(py_annoy *self, PyObject *args) {
 
 static PyMethodDef AnnoyMethods[] = {
   
+  
+  {"save_items",	(PyCFunction)py_an_save_items, METH_NOARGS, ""},
+  {"fill_items",	(PyCFunction)py_an_fill_items, METH_VARARGS | METH_KEYWORDS, ""},
   {"load_items",	(PyCFunction)py_an_load_items, METH_VARARGS | METH_KEYWORDS, ""},
   {"load",	(PyCFunction)py_an_load, METH_VARARGS | METH_KEYWORDS, "Loads (mmaps) an index from disk."},
   {"save",	(PyCFunction)py_an_save, METH_VARARGS | METH_KEYWORDS, "Saves the index to disk."},

@@ -432,6 +432,10 @@ class AnnoyIndexInterface {
   virtual bool on_disk_build(const char* filename, char** error=NULL) = 0;
 
   virtual bool load_items(const char* filename, char** error=NULL) = 0;
+
+  virtual void fill_items(char *filename) = 0;
+
+  virtual void save_items() = 0;
 };
 
 
@@ -1359,15 +1363,8 @@ public:
       printf("_n_items != 0. Aborting...");
       return;
     } 
-
-    // for storing meta data, e.g. _n_items.
-
-    
-    // _n_nodes++;
        
-
     on_disk_build(filename);
-
     _allocate_metaDataSize();
   }
 

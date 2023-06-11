@@ -10,20 +10,16 @@
 #include <random>
 
 
+int f = 768;
 
 // int n = 1000000;
-// char *fill_filename = "test-1e6.tree";
+// char *fill_filename = "test-f768-n1e6.tree";
 
 
-
-int f = 786;
 int n_trees = 5;
-// char *load_filename = "AnnoyGPU-1e6.tree";
-char *load_filename = "test-1e6.tree";
-
-
+char *load_filename = "test-f768-n1e6.tree";
 int search_multiplier = 1;
-int GPU_BUILD_MAX_ITEM_NUM = 250000;
+int GPU_BUILD_MAX_ITEM_NUM = 1000000;
 
 
 using namespace Annoy;
@@ -486,10 +482,10 @@ int main(int argc, char **argv) {
 
 #else
 
-	printf("Default CPU_BUILD\n");
-
+	printf("Default GPU_BUILD\n");
+	
 	AnnoyIndex<int, float, Angular, 
-			Kiss32Random, AnnoyIndexSingleThreadedBuildPolicy> t(f);
+			Kiss32Random, AnnoyIndexGPUBuildPolicy> t(f);	
 
 #endif
 
@@ -498,9 +494,6 @@ int main(int argc, char **argv) {
 	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
 	build_index(t, n_trees);
 	precision_test(t, f, n_trees);
-
-
-
 
 	return EXIT_SUCCESS;
 }

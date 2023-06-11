@@ -904,8 +904,6 @@ public:
 
     for(int i = 0; i < _n_items; ){
 
-
-   
       n_batch++;
 
       int item_start = i;
@@ -925,8 +923,12 @@ public:
 
       int n_items = item_end - item_start + 1;
       cudaMalloc(&vecArray_dev, n_items * _f * sizeof(T));
+
+      printf("[gpu_build()] n_items: %d, _f: %d\n", n_items, _f);
+
       vecArray_host = new T[n_items * _f];
-  
+
+
       for(int i = 0; i < n_items; i++){
 
   
@@ -938,23 +940,30 @@ public:
         }
       }
 
+  
+
       cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
                       n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
       delete [] vecArray_host;
 
       // ---------------------------------
 
-      
+  
+
       for(int i = 0; i < n_tree; i ++){
+        
+
 
         GPUStreamBuilder<S, T, D, Random> *gb =\
                 new GPUStreamBuilder<S, T, D, Random>(this, 
                             vecArray_dev, item_start, item_end);
 
         while(!gb->is_done()){ 
-
+   
           gb->one_step(); 
+
           gb->wait(); 
+
         }
 
         printf("n trees built: %d / %d\n", i + 1,  n_tree);
@@ -972,194 +981,6 @@ public:
 
 
 
-
-  // void gpu_build(int n_tree, BuildPolicy& bp){
-    
-  //   // require that GPU_BUILD_MAX_ITEM_NUM > step_size in order to have overlap.
-
-  //   // require that GPU_BUILD_MAX_ITEM_NUM > step_size.
-    
-  //   n_tree *= 2;
-
-  //   int step_size = _n_items / n_tree;
-
-  //   if(step_size > GPU_BUILD_MAX_ITEM_NUM){
-  //     printf("[gpu_build()] step_size > GPU_BUILD_MAX_ITEM_NUM. Abort...\n");
-  //     exit(1);
-  //   }
-
-
-  //   int item_start = 0;  
-  //   int item_end = 0;
-  //   int n_trees_built = 0;
-
-  //   while(item_end != _n_items - 1){
-
-  //     if(item_start + GPU_BUILD_MAX_ITEM_NUM - 1 < _n_items){
-  //       item_end = item_start + GPU_BUILD_MAX_ITEM_NUM - 1;
-  //     }
-  //     else{
-  //       item_end = _n_items - 1;
-  //     }
-
-  //     // ---------------------------------
-
-  //     T *vecArray_dev, *vecArray_host;
-
-  //     int n_items = item_end - item_start + 1;
-  //     cudaMalloc(&vecArray_dev, n_items * _f * sizeof(T));
-  //     vecArray_host = new T[n_items * _f];
-  
-  //     for(int i = 0; i < n_items; i++){
-
-  //       int item = item_start + i;
-  //       Node *node = _get(item);
-        
-  //       for(int z = 0; z < _f; z++){
-  //         vecArray_host[i * _f + z] = node->v[z];
-  //       }
-  //     }
-
-  //     cudaMemcpy((BYTE *)vecArray_dev, (BYTE *)vecArray_host, 
-  //                     n_items * _f * sizeof(T), cudaMemcpyHostToDevice);
-  //     delete [] vecArray_host;
-
-  //     // ---------------------------------
-
-      
-
-
-  //     GPUStreamBuilder<S, T, D, Random> *gb =\
-  //             new GPUStreamBuilder<S, T, D, Random>(this, 
-  //                         vecArray_dev, item_start, item_end);
-
-  //     while(!gb->is_done()){ 
-
-  //       gb->one_step(); 
-  //       gb->wait(); 
-  //     }
-
-  //     n_trees_built++;
-  //     printf("n trees built: %d / %d\n", n_trees_built,  n_tree);
-  //     delete gb;
-      
-
-  //     // printf("%d / %d\n\n", item_end + 1, _n_items);
-  //     cudaFree(vecArray_dev);
-
-
-  //     // if(item_end < GPU_BUILD_MAX_ITEM_NUM - 1) break;
-
-  //     item_start += step_size;
-  //     // item_end = (item_start + GPU_BUILD_MAX_ITEM_NUM - 1) % _n_items;
-  //   }
-
-  // }
-
-
-
-
-
-  // void combine_trees(int n_tree, int n_batch){
-
-
-  //   Random _random;
-
-  //   if(n_batch == 1) return;
-    
-  //   vector<S> children;
-
-  //   for(int i = 0; i < n_tree; i++){
-
-  //     for(int j = 0; j < n_batch; j++){
-
-  //       children.push_back(_roots[j * n_tree + i]);
-  //     }
-
-  //     _roots[i] = _make_tree(children, _random);
-
-  //     children.clear();
-  //   }
-
-
-  //   _roots.resize(n_tree);
-   
-  // }
-
-
-
-  // S _make_tree(const vector<S>& indices, Random& _random) {
-    
-  //   // printf("indices: %d\n", indices.size());
-    
-  //   if (indices.size() == 1)
-  //     return indices[0];
-
-  //   // printf("a\n");
-
-
-  //   vector<Node*> children;
-  //   for (size_t i = 0; i < indices.size(); i++) {
-  //     children.push_back(_get(indices[i]));
-  //   }
-    
-
-  //   vector<S> children_indices[2];
-  //   Node* m = (Node*)alloca(_s);
-
-  //   for (int attempt = 0; attempt < 3; attempt++) {
-
-  //     children_indices[0].clear();
-  //     children_indices[1].clear();
-  //     D::create_split(children, _f, _s, _random, m);
-
-  //     for (size_t i = 0; i < indices.size(); i++) {
-  //       S j = indices[i];
-  //       Node* n = _get(j);
-  //       if (n) {
-  //         bool side = D::side(m, n->v, _f, _random);
-  //         children_indices[side].push_back(j);
-  //       }
-  //     }
-
-  //     if (_split_imbalance(children_indices[0], children_indices[1]) < 0.95)
-  //       break;
-  //   }
-
-
-  //   // If we didn't find a hyperplane, just randomize sides as a last option
-  //   while (_split_imbalance(children_indices[0], children_indices[1]) > 0.99) {
-
-  //     children_indices[0].clear();
-  //     children_indices[1].clear();
-
-  //     for (int z = 0; z < _f; z++) m->v[z] = 0;
-
-  //     for (size_t i = 0; i < indices.size(); i++) {
-  //       children_indices[_random.flip()].push_back(indices[i]);
-  //     }
-  //   }
-
-
-
-  //   int n_descendants = 0;
-  //   for(int i = 0; i < indices.size(); i++){
-  //     n_descendants += _get(indices[i])->n_descendants;
-  //   }
-  //   m->n_descendants = n_descendants;
-
-    
-
-  //   for (int side = 0; side < 2; side++) {
-  //     m->children[side] = _make_tree(children_indices[side], _random);
-  //   }
-
-  //   _allocate_size(_n_nodes + 1);
-  //   S item = _n_nodes++;
-  //   memcpy(_get(item), m, _s);
-
-  //   return item;
-  // }
 
 
 
@@ -2125,16 +1946,15 @@ public:
 
 
   void pipeline_LaunchAsync(){
-
+    
+    printf("_f: %d, kd->n_group: %d\n", _f, kd->n_group);
 
     splitVecArray = new T[_f * kd->n_group];
     sideCountArray = new int[2 * kd->n_group];
 
-
     cudaMalloc(&(kd->groupArray_next), kd->n_group * 2 * sizeof(Group));
     cudaMalloc(&(kd->splitVecArray), kd->n_group * _f * sizeof(T));
     cudaMalloc(&(kd->sideCountArray), kd->n_group * 2 * sizeof(int));
-
 
     int n_blocks = kd->n_group;
     int n_threads_per_block = 128;
@@ -2224,6 +2044,9 @@ public:
     }
     printf("sum: %d\n", sum);
     printf("\n");
+    if(sum < 0){
+      exit(1);
+    }
   }
 
 

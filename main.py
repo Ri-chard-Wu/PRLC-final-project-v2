@@ -18,11 +18,11 @@
 
 # ======== GPU build ========
 
-# Done building in 44 secs.
-# limit: 10        precision:   6.00% avg time: 0.001748s
-# limit: 100       precision:   6.00% avg time: 0.001684s
-# limit: 1000      precision:  19.00% avg time: 0.003000s
-# limit: 10000     precision:  72.00% avg time: 0.020287s
+# Done building in 70 secs.
+# limit: 10        precision:  49.00% avg time: 0.001806s
+# limit: 100       precision:  49.00% avg time: 0.001728s
+# limit: 1000      precision:  62.00% avg time: 0.003204s
+# limit: 10000     precision:  86.00% avg time: 0.024875s
 
 
 

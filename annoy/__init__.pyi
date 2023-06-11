@@ -8,7 +8,16 @@ class _Vector(Protocol, Sized):
 class AnnoyIndex:
     f: int
     def __init__(self, f: int, metric: Literal["angular", "euclidean", "manhattan", "hamming", "dot"]) -> None: ...
+    
+
+    # bool load_items(const char* filename, char** error=NULL){    
+    def load_items(self, fn: str) -> Literal[True]:
+
+    #   bool load(const char* filename, bool prefault=false, char** error=NULL){
     def load(self, fn: str, prefault: bool = ...) -> Literal[True]: ...
+
+
+
     def save(self, fn: str, prefault: bool = ...) -> Literal[True]: ...
     @overload
     def get_nns_by_item(self, i: int, n: int, search_k: int = ..., include_distances: Literal[False] = ...) -> list[int]: ...
@@ -43,3 +52,6 @@ class AnnoyIndex:
     def get_n_trees(self) -> int: ...
     def verbose(self, __v: bool) -> Literal[True]: ...
     def set_seed(self, __s: int) -> None: ...
+
+
+

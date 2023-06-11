@@ -1,17 +1,16 @@
 
-# clear
-rm main
-# rm AnnoyGPU.tree
-# rm compile.log
+# # clear
+# rm main
 
-annoy_build_flag=${1}_BUILD
+# # rm compile.log
+# annoy_build_flag=${1}_BUILD
 
-nvcc -o main main.cu -D${annoy_build_flag} #2> compile.log
-# code compile.log
+# nvcc -o main main.cu -D${annoy_build_flag} #2> compile.log
+# # code compile.log
 
-# rm run.log
-./main #> run.log
-# code run.log
+# # rm run.log
+# ./main #> run.log
+# # code run.log
 
 #----------------------------------
 
@@ -26,8 +25,8 @@ nvcc -o main main.cu -D${annoy_build_flag} #2> compile.log
 # rm ./annoy/annoylib.so
 # # rm compile.log
 # nvcc --shared -o annoylib.so annoymodule.cu --compiler-options '-fPIC' -I/usr/include/python3.6 -DANNOYLIB_GPU_BUILD #2> compile.log
-
 # # code compile.log
 # mv annoylib.so ./annoy
-# python3 main.py
+
+python3 main.py
 

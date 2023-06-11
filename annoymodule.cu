@@ -207,12 +207,45 @@ static PyMemberDef py_annoy_members[] = {
 };
 
 
+
+
+
+
 static PyObject *
-py_an_load(py_annoy *self, PyObject *args, PyObject *kwargs) {
-  char *filename, *error;
-  bool prefault = false;
+py_an_load_items(py_annoy *self, PyObject *args, PyObject *kwargs) {
+
+  char *filename;
+
   if (!self->ptr) 
     return NULL;
+
+  static char const * kwlist[] = {"fn", NULL};
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", (char**)kwlist, &filename))
+    return NULL;
+
+
+  char *error;
+  if (!self->ptr->load_items(filename, &error)) {
+    PyErr_SetString(PyExc_IOError, error);
+    free(error);
+    return NULL;
+  }
+
+  Py_RETURN_TRUE;
+}
+
+
+
+
+static PyObject *
+py_an_load(py_annoy *self, PyObject *args, PyObject *kwargs) {
+
+  char *filename, *error;
+  bool prefault = false;
+
+  if (!self->ptr) 
+    return NULL;
+
   static char const * kwlist[] = {"fn", "prefault", NULL};
   if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|b", (char**)kwlist, &filename, &prefault))
     return NULL;
@@ -222,6 +255,7 @@ py_an_load(py_annoy *self, PyObject *args, PyObject *kwargs) {
     free(error);
     return NULL;
   }
+
   Py_RETURN_TRUE;
 }
 
@@ -396,9 +430,12 @@ py_an_get_nns_by_vector(py_annoy *self, PyObject *args, PyObject *kwargs) {
 
 static PyObject* 
 py_an_get_item_vector(py_annoy *self, PyObject *args) {
+
   int32_t item;
+
   if (!self->ptr) 
     return NULL;
+
   if (!PyArg_ParseTuple(args, "i", &item))
     return NULL;
 
@@ -412,6 +449,7 @@ py_an_get_item_vector(py_annoy *self, PyObject *args) {
   if (l == NULL) {
     return NULL;
   }
+  
   for (int z = 0; z < self->f; z++) {
     PyObject* dist = PyFloat_FromDouble(v[z]);
     if (dist == NULL) {
@@ -596,6 +634,8 @@ py_an_set_seed(py_annoy *self, PyObject *args) {
 
 
 static PyMethodDef AnnoyMethods[] = {
+  
+  {"load_items",	(PyCFunction)py_an_load_items, METH_VARARGS | METH_KEYWORDS, ""},
   {"load",	(PyCFunction)py_an_load, METH_VARARGS | METH_KEYWORDS, "Loads (mmaps) an index from disk."},
   {"save",	(PyCFunction)py_an_save, METH_VARARGS | METH_KEYWORDS, "Saves the index to disk."},
   {"get_nns_by_item",(PyCFunction)py_an_get_nns_by_item, METH_VARARGS | METH_KEYWORDS, "Returns the `n` closest items to item `i`.\n\n:param search_k: the query will inspect up to `search_k` nodes.\n`search_k` gives you a run-time tradeoff between better accuracy and speed.\n`search_k` defaults to `n_trees * n` if not provided.\n\n:param include_distances: If `True`, this function will return a\n2 element tuple of lists. The first list contains the `n` closest items.\nThe second list contains the corresponding distances."},

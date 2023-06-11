@@ -11,15 +11,16 @@
 
 
 
+// int n = 1000000;
+// char *fill_filename = "test-1e6.tree";
+
+
 
 int f = 786;
-int n = 1000000;
 int n_trees = 5;
-
 // char *load_filename = "AnnoyGPU-1e6.tree";
 char *load_filename = "test-1e6.tree";
 
-// char *fill_filename = "test-1e6.tree";
 
 int search_multiplier = 1;
 int GPU_BUILD_MAX_ITEM_NUM = 250000;
@@ -69,10 +70,9 @@ int fill_items(char *filename, int f, int n){
 
 
 template<typename BuildPolicy>
-void load_items(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, char *filename, int n){
+void load_items(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, char *filename){
 	
-	// t.load(filename);
-	t.load_items(filename, n);
+	t.load_items(filename);
 
 }
 
@@ -101,7 +101,9 @@ void build_index(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, 
 
 template<typename BuildPolicy>
 int precision_test(AnnoyIndex<int, float, Angular, Kiss32Random, BuildPolicy>& t, 
-			int f=40, int n=1000000, int n_trees=80){
+			int f, int n_trees){
+
+	int n = t._n_items;
 
 	std::chrono::high_resolution_clock::time_point t_start, t_end;
 
@@ -491,10 +493,11 @@ int main(int argc, char **argv) {
 
 #endif
 
-	load_items(t, load_filename, n);
+	load_items(t, load_filename);
+
 	t.GPU_BUILD_MAX_ITEM_NUM = GPU_BUILD_MAX_ITEM_NUM;
 	build_index(t, n_trees);
-	precision_test(t, f, n, n_trees);
+	precision_test(t, f, n_trees);
 
 
 

@@ -430,6 +430,8 @@ class AnnoyIndexInterface {
   virtual void get_item(S item, T* v) const = 0;
   virtual void set_seed(R q) = 0;
   virtual bool on_disk_build(const char* filename, char** error=NULL) = 0;
+
+  virtual bool load_items(const char* filename, char** error=NULL) = 0;
 };
 
 
@@ -892,7 +894,6 @@ public:
 
   void gpu_build(int n_tree, BuildPolicy& bp){
 
-    printf("a\n");
 
 
     int n_batch = 0;
@@ -900,8 +901,7 @@ public:
     for(int i = 0; i < _n_items; ){
 
 
-      printf("b\n");
-
+   
       n_batch++;
 
       int item_start = i;
@@ -925,8 +925,7 @@ public:
   
       for(int i = 0; i < n_items; i++){
 
-        // printf("c\n");
-
+  
         int item = item_start + i;
         Node *node = _get(item);
         
@@ -1275,7 +1274,7 @@ public:
 
   void _reallocate_nodes(S n) {
 
-    printf("_reallocate_nodes %d\n", n);
+    // printf("_reallocate_nodes %d\n", n);
 
     const double reallocation_factor = 1.3;
     S new_nodes_size = std::max(n, (S) ((_nodes_size + 1) *
@@ -1298,7 +1297,7 @@ public:
   }
 
 
-  int metaDataSize = 1;
+  int metaDataSize = 0;
 
   void _allocate_size(S n, BuildPolicy& threaded_build_policy) {
     if (metaDataSize + n > _nodes_size) {
@@ -1354,6 +1353,7 @@ public:
 
   void fill_items(char *filename){
 
+    metaDataSize = 1;
 
     if(_n_items != 0){
       printf("_n_items != 0. Aborting...");
@@ -1395,9 +1395,9 @@ public:
 
 
 
-  bool load_items(const char* filename, int n, char** error=NULL){
+  bool load_items(const char* filename, char** error=NULL){
     
-
+    metaDataSize = 1;
 
     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
 
@@ -1414,10 +1414,10 @@ public:
     _n_items = ((Node *)buf)->n_descendants;
     printf("Loaded items. _n_items: %d\n", _n_items);
 
-    if(n != _n_items){
-      printf("[load_items()] n != _n_items. Abort...\n");
-      return false;
-    }
+    // if(n != _n_items){
+    //   printf("[load_items()] n != _n_items. Abort...\n");
+    //   return false;
+    // }
 
 
     _n_nodes = (S)(_n_items + 1); // "+1" for meta data.
@@ -1441,144 +1441,12 @@ public:
 #endif
 
 
-
-    // memcpy(buf, _nodes, _s);
-    // memcpy(_nodes, _nodes + _n_items, _s);
-    // memcpy(_nodes + _n_items, buf, _s);
-
     return true;
   }
 
 
 
 
-//   bool load_items(const char* filename, int n, char** error=NULL){
-    
-
-
-//     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
-
-//     if (_fd == -1) {
-//       set_error_from_errno(error, "Unable to open");
-//       _fd = 0;
-//       return false;
-//     }
-
-//     BYTE buf[_s];
-//     read(_fd, buf, _s);
-//     // printf("n_descendants: %d\n", ((Node *)buf)->n_descendants);
-
-//     _n_items = ((Node *)buf)->n_descendants;
-//     printf("Loaded items. _n_items: %d\n", _n_items);
-
-//     if(n != _n_items){
-//       printf("[load_items()] n != _n_items. Abort...\n");
-//       return false;
-//     }
-
-
-//     _n_nodes = (S)(_n_items + 1); // "+1" for meta data.
-
-//     _loaded = false;
-//     _nodes_size = _n_nodes;
-//     _on_disk = true;
-
-
-    
-
-//     if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
-//       set_error_from_errno(error, "Unable to truncate");
-//       return false;
-//     }
-
-// #ifdef MAP_POPULATE // yes
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
-// #else
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
-// #endif
-
-
-
-//     memcpy(buf, _nodes, _s);
-//     memcpy(_nodes, _nodes + _n_items, _s);
-//     memcpy(_nodes + _n_items, buf, _s);
-
-//     return true;
-//   }
-
-
-
-
-
-
-
-//   bool load_items(const char* filename, int n, char** error=NULL){
-    
-//     std::string s = ((std::string)filename).substr(9, 3);
-//     // std::cout << s << "\n";
-//     int mantissa = std::stoi(s.substr(0, 1));
-//     int exp = std::stoi(s.substr(2, 1));
-//     // printf("mantissa: %d, exp: %d\n", mantissa, exp);
-//     int n_items_expected = mantissa * std::pow(10, exp);
-//     // std::cout << std::pow(mantissa, exp);
-//     // printf("n: %d, n_items_expected: %d\n", n, n_items_expected);
-//     if(n != n_items_expected){
-
-//       printf("[load_items()] n != n_items_expected. Abort...\n");
-//       return false;
-//     }
-
-
-
-//     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
-
-//     if (_fd == -1) {
-//       set_error_from_errno(error, "Unable to open");
-//       _fd = 0;
-//       return false;
-//     }
-
-  
-//     off_t size = lseek_getsize(_fd);
-   
-//     if (size == -1) {
-//       set_error_from_errno(error, "Unable to get size");
-//       return false;
-//     } 
-//     else if (size == 0) {
-//       set_error_from_errno(error, "Size of file is zero");
-//       return false;
-//     } 
-//     else if (size % _s) {
-//       // Something is fishy with this index!
-//       set_error_from_errno(error, "Index size is not a multiple of vector size. Ensure you are opening using the same metric you used to create the index.");
-//       return false;
-//     }
-
-//     // _n_nodes = (S)(size / _s);
-//     _n_nodes = (S)(n);
-//     printf("_n_nodes: %d\n", _n_nodes);
-
-//     _loaded = false;
-//     _n_items = _n_nodes;
-//     _nodes_size = _n_nodes;
-//     _on_disk = true;
-
-
-
-//     if (ftruncate(_fd, ANNOYLIB_FTRUNCATE_SIZE(_s) * ANNOYLIB_FTRUNCATE_SIZE(_nodes_size)) == -1) {
-//       set_error_from_errno(error, "Unable to truncate");
-//       return false;
-//     }
-
-// #ifdef MAP_POPULATE // yes
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, _fd, 0);
-// #else
-//     _nodes = (Node*) mmap(0, _s * _nodes_size, PROT_READ | PROT_WRITE, MAP_SHARED, _fd, 0);
-// #endif
-
-//     return true;
-//   }
 
 
 

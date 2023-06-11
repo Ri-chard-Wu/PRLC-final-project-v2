@@ -40,17 +40,22 @@ except NameError:
     # Python 3 compat
     xrange = range
 
-n, f = 100000, 768
+
+n, f = 100000, 786
 
 t = AnnoyIndex(f, 'angular')
-for i in xrange(n):
-    v = []
-    for z in xrange(f):
-        v.append(random.gauss(0, 1))
-    t.add_item(i, v)
+
+# for i in xrange(n):
+#     v = []
+#     for z in xrange(f):
+#         v.append(random.gauss(0, 1))
+#     t.add_item(i, v)
+
+t.load_items('test-1e6.tree')
+
 
 t.build(5)
-t.save('test.tree')
+# t.save('test.tree')
 
 limits = [10, 100, 1000, 10000]
 k = 10

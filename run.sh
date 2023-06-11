@@ -26,6 +26,10 @@ nvcc --shared -o annoylib.so annoymodule.cu --compiler-options '-fPIC' -I/usr/in
 # code compile.log
 mv annoylib.so ./annoy
 
-python3 main.py #> run.log
-# code run.log
+python3 main.py > run.log
+code run.log
 
+#----------------------------------
+
+# pip3 install numpy
+# sudo apt-get install python3-dev

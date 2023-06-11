@@ -1949,6 +1949,7 @@ public:
 
   void pipeline_LaunchAsync(){
     
+    printf("kd->n_group: %d\n", kd->n_group);
 
     cudaMalloc(&(kd->splitVecArray), kd->n_group * _f * sizeof(T));
     cudaMalloc(&(kd->sideCountArray), kd->n_group * 2 * sizeof(int));
@@ -1979,6 +1980,9 @@ public:
     cudaMemcpy(sideCountArray, kd->sideCountArray, 
                     kd->n_group * 2 * sizeof(int), cudaMemcpyDeviceToHost);
 
+    // print_sideCount(sideCountArray, kd->n_group);
+    // printf("_K: %d\n", _K); // 770
+
     cudaEventRecord(event_asyncCopy, stream);
 
     cudaFree(kd->splitVecArray);
@@ -1990,11 +1994,12 @@ public:
   // can set done.
   void pipeline_postLaunchUpdateSync(){
 
-    S *parentIndexArray_next = new S[2 * n_group];
-    int groupIdx_next = new int[2 * n_group];
-
     int n_group = kd->n_group;
     int n_group_next = 0;
+
+    S *parentIndexArray_next = new S[2 * n_group];
+    int *groupIdx_next = new int[2 * n_group];
+
 
     for(int group_i = 0; group_i < n_group; group_i++){
 
@@ -2018,6 +2023,7 @@ public:
             annoy->_allocate_size(annoy->_n_nodes + 1);
             S item = annoy->_n_nodes++;
             Node *m = annoy->_get(item);
+            m->n_descendants = group.sz;
             cudaMemcpy(m->children, kd->indexArray + group.pos, 
                               group.sz * sizeof(S), cudaMemcpyDeviceToHost);
             p->children[i] = item;
@@ -2054,6 +2060,8 @@ public:
       cudaFree(kd->groupArray);      
     }
     else{
+      
+      // printf("n_group_next: %d, n_group: %d\n", n_group_next, n_group);
 
       if(n_group_next < n_group * 2){
 
@@ -2061,9 +2069,12 @@ public:
 
         for(int i = 0; i < n_group_next; i++){
           
-          group_i = groupIdx_next[i];
+          int group_i = groupIdx_next[i];
           cudaMemcpy(groupArray + i, kd->groupArray_next + group_i,
             sizeof(Group), cudaMemcpyDeviceToHost);
+
+          // printf("sz: %d\n", groupArray[i].sz);   
+          if(groupArray[i].sz <= (int)_K) printf("<= _K\n");
         }
         
         delete [] groupIdx_next;
@@ -2072,7 +2083,7 @@ public:
         cudaFree(kd->groupArray);
         cudaMalloc(&(kd->groupArray), n_group_next * sizeof(Group));
         cudaMemcpy(kd->groupArray, groupArray,
-            n_group_next * sizeof(Group), cudaMemcpyDeviceToHost)
+            n_group_next * sizeof(Group), cudaMemcpyHostToDevice);
         cudaMalloc(&(kd->groupArray_next), n_group_next * 2 * sizeof(Group));
       }
       else{
@@ -2088,69 +2099,6 @@ public:
       parentIndexArray = parentIndexArray_next;
     }
   }
-
-
-
-
-
-
-
-
-  // void updateTreeInternalNode(){
-
-  
-  //   int n_group = kd->n_group;
-
-
-  //   S **childPtrArray_next = new S*[4 * n_group];
-  //   int done_count = 0;
-
-  //   for(int group_i = 0; group_i < n_group; group_i++){
-  
-  //     for(int i = 0; i < 2; i++){
-
-  //       // a leaf - Don't need to create group.
-  //       // _K == 1574 for _f == 786, T == double.
-  //       if (sideCountArray[2 * group_i + i] <= (int)_K) { 
-
-  //         done_count++;
-
-  //         childPtrArray_next[4 * group_i + 2 * i + 0] = childPtrArray[2 * group_i + i];
-  //         childPtrArray_next[4 * group_i + 2 * i + 1] = childPtrArray[2 * group_i + i];
-
-  //         continue;
-  //       }
-
-  //       // Need to create group.
-  //       annoy->_allocate_size(annoy->_n_nodes + 1);
-  //       S item = annoy->_n_nodes++;
-  //       Node* m = annoy->_get(item);
-
-  //       *(childPtrArray[2 * group_i + i]) = item; // children
-  //       m->n_descendants = sideCountArray[2 * group_i + i]; // n_descendants
-
-  //       childPtrArray_next[4 * group_i + 2 * i + 0] = &(m->children[0]);
-  //       childPtrArray_next[4 * group_i + 2 * i + 1] = &(m->children[1]);
-  //     }
-
-  
-  //     if(sideCountArray[2 * group_i] >= 0){ 
-  //       Node *p = (Node *)(((BYTE *)(childPtrArray[2 * group_i])) - offsetof(Node, children));
-  //       memcpy(p->v, splitVecArray + group_i * _f, _f * sizeof(T)); // v
-  //     }
-  //   }
-
-
-  //   done = false;
-  //   if(done_count == 2 * n_group){
-  //     done = true;
-  //     delete [] childPtrArray_next;  
-  //     return;
-  //   }
-    
-  //   delete [] childPtrArray;
-  //   childPtrArray = childPtrArray_next;
-  // }
 
 
 
@@ -2191,57 +2139,6 @@ public:
     pipeline[cur_step](this);
     
   }
-
-
-  // void updateTreeLeafNode(){
-
-
-  //   cudaMemcpy((BYTE *)indexArray, (BYTE *)(kd->indexArray), 
-  //               _n_items * sizeof(S), cudaMemcpyDeviceToHost);
-
-  //   for(int i = 0; i < _n_items; i++) indexArray[i] += item_offset;
-
-  //   Group *groupArray = new Group[kd->n_group];
-  //   cudaMemcpy((BYTE *)groupArray, (BYTE *)(kd->groupArray), 
-  //               kd->n_group * sizeof(Group), cudaMemcpyDeviceToHost);
-    
-  //   int n_group = kd->n_group;
-
-  //   for(int i = 0; i < n_group; ){
-
-  //     while(i + 1 <= n_group - 1){
-
-  //       if(childPtrArray[i + 1] == childPtrArray[i]){
-  //         i++;
-  //       }
-  //       else{
-  //         break;
-  //       }
-  //     }
-
-  //     int offset = groupArray[i].pos;
-  //     int sz = groupArray[i].sz;
-
-  //     if(sz == 1){
-  //       *(childPtrArray[i]) = indexArray[offset];
-  //       continue;
-  //     }
-  //     else{
-
-  //       annoy->_allocate_size(annoy->_n_nodes + 1);
-  //       S item = annoy->_n_nodes++;
-  //       Node* m = annoy->_get(item);
-  //       m->n_descendants = (S)sz;
-  //       memcpy(m->children, indexArray + offset, sz * sizeof(S));     
-  //       *(childPtrArray[i]) = item;   
-  //     }
-
-  //     i++;
-  //   }
-
-  //   delete [] groupArray;
-  // }
-              
 
 
   ~GPUStreamBuilder(){

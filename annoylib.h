@@ -1011,9 +1011,7 @@ public:
 
   void gpu_build(int n_tree, BuildPolicy& bp){
 
-    
-
-
+  
     Random _random(_seed);
 
     vector<S> thread_roots;
@@ -1069,7 +1067,7 @@ public:
     if(indices.size() <= bp.GPU_BUILD_MAX_ITEM_NUM){
 
       GPUStreamBuilder<S, T, D, Random> *gb =\
-                      new GPUStreamBuilder<S, T, D, Random>(this, indices);
+                      new GPUStreamBuilder<S, T, D, Random>(this, indices, &bp);
       while(!gb->is_done() && !gb->is_failed()){ 
         gb->one_step(); 
         gb->wait(); 
@@ -1201,8 +1199,6 @@ public:
 
   
   Node* _get(const S i) const {
-
-
     return get_node_ptr<S, Node>(_nodes, _s, i + metaDataSize);
   }
 

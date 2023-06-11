@@ -545,7 +545,12 @@ public:
   bool on_disk_build(const char* file, char** error=NULL) {
 
     _on_disk = true;
-    _fd = open(file, O_RDWR | O_CREAT | O_TRUNC, (int) 0600);
+    _fd = open(file, O_RDWR | O_CREAT | O_TRUNC | O_EXCL, (int) 0600);
+
+    if(errno == EEXIST){
+      printf("File already exists. Aborting...\n");
+      exit(-1);
+    }
 
     if (_fd == -1) {
       set_error_from_errno(error, "Unable to open");
@@ -628,6 +633,8 @@ public:
     }
 
     _built = true;
+
+
 
 
     t_end = std::chrono::high_resolution_clock::now();
@@ -892,7 +899,8 @@ public:
 
 
 
-  S _make_tree(const vector<S>& indices, bool is_root, Random& _random, BuildPolicy& threaded_build_policy) {
+  S _make_tree(const vector<S>& indices, bool is_root, Random& _random,
+               BuildPolicy& threaded_build_policy) {
     // The basic rule is that if we have <= _K items, then it's a leaf node, otherwise it's a split node.
     // There's some regrettable complications caused by the problem that root nodes have to be "special":
     // 1. We identify root nodes by the arguable logic that _n_items == n->n_descendants, regardless of how many descendants they actually have
@@ -1001,12 +1009,10 @@ public:
 
 
 
-
-
-  int GPU_BUILD_MAX_ITEM_NUM = 1000000;
-
-
   void gpu_build(int n_tree, BuildPolicy& bp){
+
+    
+
 
     Random _random(_seed);
 
@@ -1028,7 +1034,7 @@ public:
         }
       }
 
-      thread_roots.push_back(_make_tree_gup_build(indices, true, _random));
+      thread_roots.push_back(_make_tree_gup_build(indices, true, _random, bp));
       printf("n trees built: %d / %d\n", thread_roots.size(), n_tree);      
     }
 
@@ -1037,17 +1043,13 @@ public:
 
 
 
-  S _make_tree_gup_build(vector<S>& indices, bool is_root, Random& _random) {
+
+
+  S _make_tree_gup_build(vector<S>& indices, bool is_root, Random& _random, BuildPolicy& bp) {
    
     
-
-    if (indices.size() == 1 && !is_root){
+    if (indices.size() == 1 && !is_root) return indices[0];
   
-      return indices[0];
-    }
-
-    
-
     if (indices.size() <= (size_t)_K && (!is_root || (size_t)_n_items <= (size_t)_K || indices.size() == 1)) {
 
       _allocate_size(_n_nodes + 1);
@@ -1063,23 +1065,24 @@ public:
     }
 
 
-
     // GPU build.
-    if(indices.size() <= GPU_BUILD_MAX_ITEM_NUM){
+    if(indices.size() <= bp.GPU_BUILD_MAX_ITEM_NUM){
 
       GPUStreamBuilder<S, T, D, Random> *gb =\
                       new GPUStreamBuilder<S, T, D, Random>(this, indices);
-      while(!gb->is_done()){ 
+      while(!gb->is_done() && !gb->is_failed()){ 
         gb->one_step(); 
         gb->wait(); 
       }
-      S item = gb->item_root;
+
+      if(!gb->is_failed()){
+        S item = gb->item_root;
+        delete gb;
+        return item;
+      }
+
       delete gb;
-      return item;
     } 
-
-
-    printf("d\n");
 
 
 
@@ -1136,7 +1139,7 @@ public:
     m->n_descendants = is_root ? _n_items : (S)indices.size();
     for (int side = 0; side < 2; side++) {
       m->children[side^flip] = \
-        _make_tree_gup_build(children_indices[side^flip], false, _random);
+        _make_tree_gup_build(children_indices[side^flip], false, _random, bp);
     }
 
     _allocate_size(_n_nodes + 1);
@@ -1266,25 +1269,23 @@ public:
     
     metaDataSize = 1;
 
+
     _fd = open(filename, O_RDWR | O_CREAT, (int) 0600);
+
 
     if (_fd == -1) {
       set_error_from_errno(error, "Unable to open");
       _fd = 0;
-      return false;
+      exit(-1);
     }
+
 
     BYTE buf[_s];
     read(_fd, buf, _s);
-    // printf("n_descendants: %d\n", ((Node *)buf)->n_descendants);
 
     _n_items = ((Node *)buf)->n_descendants;
     printf("Loaded items. _n_items: %d\n", _n_items);
 
-    // if(n != _n_items){
-    //   printf("[load_items()] n != _n_items. Abort...\n");
-    //   return false;
-    // }
 
 
     _n_nodes = (S)(_n_items + 1); // "+1" for meta data.
@@ -1455,9 +1456,6 @@ T distance(T *vec1, T *vec2, int f) {
 
 
 
-
-
-
 template<typename S, typename T, typename Random>
 __device__
 void two_means(int tid, int n_threads, S *indexArray, int sz, 
@@ -1545,9 +1543,7 @@ void two_means(int tid, int n_threads, S *indexArray, int sz,
       if(tid == 0) (*jc)++;
       __syncthreads();
     }
-
   }
-
 }
 
 
@@ -1580,7 +1576,6 @@ double _split_imbalance(int left_sz, int right_sz) {
   double ls = (float)left_sz;
   double rs = (float)right_sz;
   float f = ls / (ls + rs + 1e-9);  // Avoid 0/0
-  // return std::max(f, 1-f);
   return max(f, 1-f);
 }
 
@@ -1608,7 +1603,6 @@ void group_moveSide(S* indexArray, int *sideArray, int sz){
     else{
       n_left++;
     }
-
   }
 }
 
@@ -1680,26 +1674,18 @@ void group_getSideCount(int tid, int n_threads, int *sideArray, int sz,
 }
 
 
-struct Group{
-  Group(int pos, int sz): pos(pos), sz(sz){}
-  Group() {}
-  int pos, sz;
-};
-
 
 template<typename S, typename T, typename D, typename Random>
 __global__ void kernel_split(
   typename GPUStreamBuilder<S, T, D, Random>::KernelData *kd){
-
-  
 
   int randomSeedb_base = kd->n_nodes;
   S *indexArray = kd->indexArray;
   T *vecArray = kd->vecArray;
   int f = kd->f;
   S K = kd->K;
-  Group *groupArray = kd->groupArray;
-  Group *groupArray_next = kd->groupArray_next;
+  typename GPUStreamBuilder<S, T, D, Random>::Group *groupArray = kd->groupArray;
+  typename GPUStreamBuilder<S, T, D, Random>::Group *groupArray_next = kd->groupArray_next;
   int n_group = kd->n_group;
   T *splitVecArray = kd->splitVecArray;
   int *sideArray = kd->sideArray;
@@ -1726,11 +1712,6 @@ __global__ void kernel_split(
     return;
   } 
 
-
-
-
-
-  // printf("tid = %d\n", tid);
 
   int offset = groupArray[bid_x].pos;
   int sz = groupArray[bid_x].sz;
@@ -1870,12 +1851,22 @@ __global__ void kernel_split(
 }
 
 
+
+
 template<typename S, typename T, typename D, typename Random>
 class GPUStreamBuilder{
 
 public:
 
   typedef typename D::template Node<S, T> Node;
+
+
+  struct Group{
+    Group(int pos, int sz): pos(pos), sz(sz){}
+    Group() {}
+    int pos, sz;
+  };
+
 
   struct KernelData{
 
@@ -1905,20 +1896,17 @@ public:
       n_group = 1;
     }
 
-    int n_nodes;
-    
-    int f;
+    int n_nodes, n_group, f;
     S K;
 
+    // Per-item data.
     S *indexArray;
     T *vecArray;
-
     int *sideArray;
 
-    int n_group;
+    // Alogrithm data.
     Group *groupArray;
     Group *groupArray_next;
-
     T *splitVecArray;
     int *sideCountArray;
 
@@ -1926,13 +1914,55 @@ public:
 
 
   GPUStreamBuilder(AnnoyIndex<S, T, D, Random, AnnoyIndexGPUBuildPolicy> *annoy, 
-                              vector<S>& indices): annoy(annoy){
+                              vector<S>& indices, AnnoyIndexGPUBuildPolicy *bp): 
+                              annoy(annoy), bp(bp){
+
 
     _f = annoy->_f;
     _K = annoy->_K;
 
+    cudaEventCreate(&event_asyncCopy);
+    cudaEventCreate(&event_vecArrayAsyncCopy);
+    cudaStreamCreate(&stream);
+
 
     idxMap_vir2phy = &indices;
+
+    // // ------------------------------------
+
+    // T *vecArray_host;
+    // T *vecArray_dev;
+    // cudaMalloc(&vecArray_dev, indices.size() * _f * sizeof(T));
+    // vecArray_host = new T[indices.size() * _f];
+
+    // for(int i = 0; i < indices.size(); i++){
+
+    //   Node *node = annoy->_get(indices[i]);
+    //   memcpy(vecArray_host + i * _f, node->v, _f * sizeof(T));
+    // }
+
+
+    // // std::chrono::high_resolution_clock::time_point t_start, t_end;
+    // // t_start = std::chrono::high_resolution_clock::now();
+
+    // cudaMemcpy(vecArray_dev, vecArray_host, 
+    //                 indices.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
+
+    // // t_end = std::chrono::high_resolution_clock::now();
+    // // auto duration = std::chrono::\
+    // //       duration_cast<std::chrono::seconds>( t_end - t_start ).count();
+    // // std::cout << "\ntrasfer vecArray dt: "<< duration << " secs." << std::endl;
+
+    // delete [] vecArray_host;
+
+
+    // _n_items = indices.size();
+    // indexArray = new S[_n_items];
+    // for (S i = 0; i < _n_items; i++) {
+    //     indexArray[i] = i;
+    // }
+
+    // ------------------------------------
 
     T *vecArray_host;
     T *vecArray_dev;
@@ -1945,27 +1975,25 @@ public:
       memcpy(vecArray_host + i * _f, node->v, _f * sizeof(T));
     }
 
-    cudaMemcpy(vecArray_dev, vecArray_host, 
-                    indices.size() * _f * sizeof(T), cudaMemcpyHostToDevice);
-    delete [] vecArray_host;
+    cudaMemcpyAsync(vecArray_dev, vecArray_host, 
+                    indices.size() * _f * sizeof(T), cudaMemcpyHostToDevice, stream);
 
-
-
-
+    cudaEventRecord(event_vecArrayAsyncCopy, stream);
+    
 
     _n_items = indices.size();
     indexArray = new S[_n_items];
     for (S i = 0; i < _n_items; i++) {
         indexArray[i] = i;
     }
-    
+
+
+    // ------------------------------------
     
     annoy->_allocate_size(annoy->_n_nodes + 1);
     item_root = annoy->_n_nodes++;
     Node *m = annoy->_get(item_root);
     m->n_descendants = _n_items;
-
-    // annoy->_roots.push_back(item);
 
     if (_n_items <= (size_t)_K) {
       memcpy(m->children, &indices[0], indices.size() * sizeof(S));
@@ -1973,14 +2001,14 @@ public:
       return;
     }
 
-    // printf("_n_items: %d\n", _n_items);
     kd = new KernelData(annoy->_n_nodes, _f, _K, _n_items, vecArray_dev, indexArray);
 
     parentIndexArray = new S[1];
     parentIndexArray[0] = item_root;
 
-    cudaEventCreate(&event_asyncCopy);
-    cudaStreamCreate(&stream);
+
+    cudaEventSynchronize(event_vecArrayAsyncCopy);
+    delete [] vecArray_host;
   }
 
   S translate(S idx_vir){
@@ -1991,10 +2019,14 @@ public:
     return done;
   }
 
+  bool is_failed(){
+    return failed;
+  }
+
 
   void wait(){
     
-    if(is_done()) return;
+    if(is_done() || is_failed()) return;
 
     if(cur_step == 0){
       wait_LaunchAsync();
@@ -2127,20 +2159,20 @@ public:
     delete [] sideCountArray;
 
 
-    done = false;
 
-    if(n_group_next == 0){
+    if(n_group_next == 0 || n_group_next > bp->MAX_GROUP_NUM){
 
-      done = true;
+      if(n_group_next == 0) done = true;
+      else failed = true;
+
       delete [] parentIndexArray;
       delete [] parentIndexArray_next;  
       cudaFree(kd->groupArray_next);
-      cudaFree(kd->groupArray);      
+      cudaFree(kd->groupArray);   
+      return;   
     }
     else{
       
-      // printf("n_group_next: %d, n_group: %d\n", n_group_next, n_group);
-
       if(n_group_next < n_group * 2){
 
         Group *groupArray = new Group[n_group_next];
@@ -2169,7 +2201,7 @@ public:
       }
 
       kd->n_group = n_group_next;
-
+    
       delete [] parentIndexArray;
       parentIndexArray = parentIndexArray_next;
     }
@@ -2207,7 +2239,7 @@ public:
 
   void one_step(){
     
-    if(is_done()) return;
+    if(is_done() || is_failed()) return;
 
     cur_step = (cur_step + 1) % n_pipeline_stage;
     // printf("cur_step: %d\n", cur_step);
@@ -2238,7 +2270,7 @@ public:
   int _f;
   S _K, _n_items;
 
-  bool done = false;
+  bool done = false, failed = false;
   S *parentIndexArray;
   T *splitVecArray;
   int *sideCountArray;
@@ -2251,26 +2283,62 @@ public:
 
   int cur_step = -1;
   cudaStream_t stream;
-  cudaEvent_t event_asyncCopy;
+  cudaEvent_t event_asyncCopy, event_vecArrayAsyncCopy;
+  
 
   S item_root;
   vector<S> *idxMap_vir2phy;
+  AnnoyIndexGPUBuildPolicy *bp;
 };
 
 
 class AnnoyIndexGPUBuildPolicy {
 public:
 
+  // // Per-item data.
+  // S *indexArray;
+  // T *vecArray;
+  // int *sideArray;
+
+  // // Alogrithm data.
+  // Group *groupArray;
+  // Group *groupArray_next;
+  // T *splitVecArray;
+  // int *sideCountArray;
+
+  static const long long GPU_BUILD_MAX_SIZE = 6e9;
+  static const long long MAX_GROUP_NUM = 4096;
+  long long ITEM_SIZE;
+  long long MAX_ALOG_DATA_SIZE;
+  long long GPU_BUILD_MAX_ITEM_NUM;
+
   
-  
+
   template<typename S, typename T, typename D, typename Random>
   static void build(AnnoyIndex<S, T, D, Random, 
             AnnoyIndexGPUBuildPolicy>* annoy, int q, int n_threads) {
 
     fprintf(stdout, "\n\n======== GPU build ========\n\n");
 
-    AnnoyIndexGPUBuildPolicy build_policy;
+
+    long long item_size = annoy->_f * sizeof(T) + sizeof(int) + sizeof(S);
+
+    typedef typename GPUStreamBuilder<S, T, D, Random>::Group Group;
+
+    long long max_alog_data_size = MAX_GROUP_NUM *\
+               (3 * sizeof(Group) + annoy->_f * sizeof(T) + 2 * sizeof(int));
+
+    AnnoyIndexGPUBuildPolicy build_policy(item_size, max_alog_data_size);
     annoy->gpu_build(q, build_policy);
+  }
+
+  AnnoyIndexGPUBuildPolicy(long long item_size, long long max_alog_data_size){
+
+    ITEM_SIZE = item_size;
+    MAX_ALOG_DATA_SIZE = max_alog_data_size;
+    GPU_BUILD_MAX_ITEM_NUM = (GPU_BUILD_MAX_SIZE - MAX_ALOG_DATA_SIZE) / (ITEM_SIZE);
+
+    printf("GPU_BUILD_MAX_ITEM_NUM: %d\n", GPU_BUILD_MAX_ITEM_NUM);
   }
 
   void lock_n_nodes() {}
